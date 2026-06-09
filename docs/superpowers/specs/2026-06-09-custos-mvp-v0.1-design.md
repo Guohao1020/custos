@@ -79,7 +79,7 @@ interface Storage {                 // 所有 value 落盘前经 Barrier
   List<String> list(String prefix);
 }
 ```
-- 实现 `MySqlStorage`（JDBC/MyBatis）。表见 §4。
+- 实现 `JimmerStorage`：用 Jimmer 实体 `StorageEntry`（`String key`、`byte[] value` 密文）+ repository 持久化；Barrier 加解密在 service 层（Jimmer 只存密文）。见 ADR-8、`docs/research/jimmer.md`、§4。
 
 ### 3.5 `engine/lease` — LeaseManager
 ```java
@@ -151,6 +151,8 @@ interface ControlPlane {
 ---
 
 ## 4. 数据与存储 schema（MySQL，值列全密文）
+
+> **持久化方式（ADR-8）**：下列表经 **Jimmer 不可变实体 + `JavaRepository`** 读写（类型安全 DSL、无 N+1）；`byte[]` 列存 **Barrier 密文**，加解密在 service 层。**裸 JDBC 仅用于**：目标库 DDL/账号管理（动态凭证 `CREATE/DROP USER`）与经纪层 secretless 任意 SELECT。表结构等价于下列 DDL，亦可由 Jimmer 实体反推。
 
 | 表 | 关键列 | 说明 |
 |---|---|---|

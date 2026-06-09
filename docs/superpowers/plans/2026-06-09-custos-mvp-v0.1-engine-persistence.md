@@ -1,14 +1,15 @@
-# Custos MVP v0.1 — 引擎持久化 Implementation Plan（计划 2/5）
+# Custos MVP v0.1 — 引擎持久化（Jimmer）Implementation Plan（计划 2/5）
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 在引擎基座（计划 1/5）之上，以 TDD 实现持久化层——MySQL 全密文存储、MySQL 版 SealStore、哈希链防篡改审计、租约管理、动态 MySQL 只读凭证（CREATE/DROP USER + TTL）。
+**Goal:** 在引擎基座（计划 1/5）之上，以 TDD + **Jimmer ORM** 实现持久化层——MySQL 全密文存储、Jimmer 版 SealStore、哈希链防篡改审计、租约管理、动态 MySQL 只读凭证。
 
-**Architecture:** 纯 JDBC（无 ORM），所有敏感值落盘前经 Barrier 加密。集成测试用 Testcontainers 起真实 MySQL。审计为只追加哈希链。动态凭证现场建临时只读账号、到期由 Lease 撤销（DROP USER）。
+**Architecture:** Custos **自身元数据表**用 **Jimmer 不可变实体 + JSqlClient**（类型安全 DSL、无 N+1）持久化（决策见 ADR-8 / `docs/research/jimmer.md`）。`byte[]` 列存 **Barrier 密文**，加解密在 service 层完成，Jimmer 不接触明文。**裸 JDBC 仅保留两处非 ORM 场景**：动态凭证的 `CREATE/DROP USER`（目标库账号管理）、经纪层的 secretless 任意 SELECT（计划 5）。集成测试用 Testcontainers 起真实 MySQL。
 
-**Tech Stack:** Java 21 · JDBC · MySQL 8 · Testcontainers · JUnit 5 ·（依赖计划 1 的 `IntlSuite`/`DefaultBarrier`/`SealManager`）
+**Tech Stack:** Java 21 · **Jimmer 0.10.10**（jimmer-sql + jimmer-apt 编译时）· MySQL 8 · Testcontainers · JUnit 5 ·（依赖计划 1 的 `IntlSuite`/`DefaultBarrier`/`SealManager`/`SealStore`）
 
-> 前置：计划 1/5 已完成（`io.custos.engine.crypto`/`barrier`/`seal` 可用）。对应 spec §3.4–3.6、§4，详设 `docs/design/02` §7/§11、`docs/design/06` §3。
+> 前置：计划 1/5 完成。对应 spec §3.4–3.6、§4、ADR-8，详设 `docs/design/02` §7/§11、`docs/design/06` §3、`docs/design/08` ADR-8。
+> **Jimmer 是编译时框架**：实体为 `@Entity interface`，`mvn` 编译时由 jimmer-apt 生成 `XxxDraft`/`XxxTable`/`XxxProps`。测试引用这些生成类，首次编译即生成。
 
 ---
 
@@ -16,35 +17,43 @@
 
 | 文件 | 职责 |
 |---|---|
-| `engine/pom.xml` | 加 mysql-connector-j（runtime）、testcontainers-mysql/junit（test）|
-| `engine/src/main/resources/db/schema.sql` | 建表 DDL（custos_storage/keyring/seal_config/audit/lease/dyn_role）|
+| `engine/pom.xml` | 加 jimmer-sql + jimmer-apt（annotationProcessorPaths）+ mysql + testcontainers |
+| `engine/src/main/resources/db/schema.sql` | 建表 DDL（列名避开 KEY/VALUE 保留字）|
+| `engine/src/main/java/io/custos/engine/persistence/JimmerClients.java` | 由 DataSource 构建 JSqlClient |
+| `engine/src/main/java/io/custos/engine/storage/StorageEntry.java` | `@Entity` 存储行 |
 | `engine/src/main/java/io/custos/engine/storage/Storage.java` | 存储抽象 |
-| `engine/src/main/java/io/custos/engine/storage/MySqlStorage.java` | MySQL 全密文存储 |
-| `engine/src/main/java/io/custos/engine/seal/MySqlSealStore.java` | SealStore 的 MySQL 实现 |
-| `engine/src/main/java/io/custos/engine/audit/AuditRecord.java` | 审计记录（不可变）|
-| `engine/src/main/java/io/custos/engine/audit/AuditLog.java` | 审计接口 |
-| `engine/src/main/java/io/custos/engine/audit/VerifyResult.java` | 链校验结果 |
-| `engine/src/main/java/io/custos/engine/audit/HashChainAuditLog.java` | 哈希链实现 |
-| `engine/src/main/java/io/custos/engine/lease/Lease.java` | 租约 |
-| `engine/src/main/java/io/custos/engine/lease/Revoker.java` | 撤销回调 |
-| `engine/src/main/java/io/custos/engine/lease/LeaseManager.java` | 租约接口 |
-| `engine/src/main/java/io/custos/engine/lease/DefaultLeaseManager.java` | 租约实现 |
-| `engine/src/main/java/io/custos/engine/secrets/DynamicDbCredentials.java` | 动态 DB 只读凭证 |
-| `engine/src/test/java/io/custos/engine/**` | 对应集成测试（Testcontainers）|
+| `engine/src/main/java/io/custos/engine/storage/JimmerStorage.java` | Jimmer 全密文存储 |
+| `engine/src/main/java/io/custos/engine/seal/SealConfigEntry.java` | `@Entity` 解封配置行 |
+| `engine/src/main/java/io/custos/engine/seal/JimmerSealStore.java` | SealStore 的 Jimmer 实现 |
+| `engine/src/main/java/io/custos/engine/audit/AuditRow.java` | `@Entity` 审计行 |
+| `engine/src/main/java/io/custos/engine/audit/{AuditRecord,VerifyResult,AuditLog,HashChainAuditLog}.java` | 哈希链审计 |
+| `engine/src/main/java/io/custos/engine/lease/LeaseRow.java` | `@Entity` 租约行 |
+| `engine/src/main/java/io/custos/engine/lease/{Lease,Revoker,LeaseManager,DefaultLeaseManager}.java` | 租约 |
+| `engine/src/main/java/io/custos/engine/secrets/{IssuedCred,DynamicDbCredentials}.java` | 动态 DB 凭证（裸 JDBC 账号管理 + Jimmer 租约）|
+| `engine/src/test/java/io/custos/engine/**` | Testcontainers 集成测试 |
 
 ---
 
-## Task 1: 加依赖 + 建表 DDL + Storage 抽象与 MySQL 实现
+## Task 1: Jimmer 接入 + StorageEntry 实体 + JimmerStorage（全密文）
 
 **Files:**
 - Modify: `engine/pom.xml`
 - Create: `engine/src/main/resources/db/schema.sql`
+- Create: `engine/src/main/java/io/custos/engine/persistence/JimmerClients.java`
+- Create: `engine/src/main/java/io/custos/engine/storage/StorageEntry.java`
 - Create: `engine/src/main/java/io/custos/engine/storage/Storage.java`
-- Create: `engine/src/main/java/io/custos/engine/storage/MySqlStorage.java`
-- Test: `engine/src/test/java/io/custos/engine/storage/MySqlStorageIT.java`
+- Create: `engine/src/main/java/io/custos/engine/storage/JimmerStorage.java`
+- Test: `engine/src/test/java/io/custos/engine/storage/JimmerStorageIT.java`
 
-- [ ] **Step 1: 加依赖到 `engine/pom.xml`**（在 `<dependencies>` 内追加）
+- [ ] **Step 1: 加 Jimmer/MySQL/Testcontainers 依赖 + APT 到 `engine/pom.xml`**
+
+在 `<dependencies>` 加：
 ```xml
+    <dependency>
+      <groupId>org.babyfish.jimmer</groupId>
+      <artifactId>jimmer-sql</artifactId>
+      <version>0.10.10</version>
+    </dependency>
     <dependency>
       <groupId>com.mysql</groupId>
       <artifactId>mysql-connector-j</artifactId>
@@ -63,8 +72,29 @@
       <scope>test</scope>
     </dependency>
 ```
+并在 `engine/pom.xml` 加 `<build>`（启用 jimmer-apt 注解处理器）：
+```xml
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.13.0</version>
+        <configuration>
+          <annotationProcessorPaths>
+            <path>
+              <groupId>org.babyfish.jimmer</groupId>
+              <artifactId>jimmer-apt</artifactId>
+              <version>0.10.10</version>
+            </path>
+          </annotationProcessorPaths>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+```
 
-- [ ] **Step 2: 写建表 DDL**
+- [ ] **Step 2: 建表 DDL（列名避开 SQL 保留字 KEY/VALUE）**
 
 `engine/src/main/resources/db/schema.sql`:
 ```sql
@@ -73,44 +103,37 @@ CREATE TABLE IF NOT EXISTS custos_storage (
   svalue     LONGBLOB NOT NULL,          -- Barrier 密文
   updated_at BIGINT NOT NULL
 );
-
 CREATE TABLE IF NOT EXISTS custos_seal_config (
-  ckey   VARCHAR(64) PRIMARY KEY,        -- wrapped_barrier / threshold / shares
-  cval   LONGBLOB NOT NULL
+  ckey VARCHAR(64) PRIMARY KEY,
+  cval LONGBLOB NOT NULL
 );
-
 CREATE TABLE IF NOT EXISTS custos_audit (
-  seq             BIGINT AUTO_INCREMENT PRIMARY KEY,
-  ts              BIGINT NOT NULL,
-  actor           VARCHAR(512) NOT NULL,
-  task            VARCHAR(512),
-  resource        VARCHAR(512),
-  action          VARCHAR(64),
-  decision        VARCHAR(32),
-  result_digest   VARCHAR(128),
-  sensitive_hmac  VARCHAR(128),
-  prev_hash       VARCHAR(128) NOT NULL,
-  chain_hash      VARCHAR(128) NOT NULL
+  seq            BIGINT AUTO_INCREMENT PRIMARY KEY,
+  ts             BIGINT NOT NULL, actor VARCHAR(512) NOT NULL,
+  task VARCHAR(512), resource VARCHAR(512), action VARCHAR(64),
+  decision VARCHAR(32), result_digest VARCHAR(128), sensitive_hmac VARCHAR(128),
+  prev_hash VARCHAR(128) NOT NULL, chain_hash VARCHAR(128) NOT NULL
 );
-
 CREATE TABLE IF NOT EXISTS custos_lease (
-  lease_id      VARCHAR(128) PRIMARY KEY,
+  lease_id      VARCHAR(160) PRIMARY KEY,
   resource_path VARCHAR(512) NOT NULL,
-  issued_at     BIGINT NOT NULL,
-  expire_at     BIGINT NOT NULL,
+  issued_at     BIGINT NOT NULL, expire_at BIGINT NOT NULL,
   revoked       TINYINT NOT NULL DEFAULT 0
 );
 ```
 
-- [ ] **Step 3: 写失败测试（Testcontainers MySQL：put→get 密文往返）**
+- [ ] **Step 3: 写失败测试（Testcontainers：put→get 密文往返；落盘是密文；list 前缀）**
 
-`engine/src/test/java/io/custos/engine/storage/MySqlStorageIT.java`:
+`engine/src/test/java/io/custos/engine/storage/JimmerStorageIT.java`:
 ```java
 package io.custos.engine.storage;
 
+import com.mysql.cj.jdbc.MysqlDataSource;
 import io.custos.engine.barrier.DefaultBarrier;
 import io.custos.engine.crypto.IntlSuite;
 import io.custos.engine.crypto.Keyring;
+import io.custos.engine.persistence.JimmerClients;
+import org.babyfish.jimmer.sql.JSqlClient;
 import org.junit.jupiter.api.*;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -119,20 +142,19 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.Statement;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 @Testcontainers
-class MySqlStorageIT {
+class JimmerStorageIT {
 
     @Container
     static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0");
 
-    private Connection conn;
-    private MySqlStorage storage;
+    private MysqlDataSource ds;
+    private JimmerStorage storage;
 
     private DefaultBarrier barrier() {
         byte[] k = new byte[32];
@@ -144,13 +166,15 @@ class MySqlStorageIT {
 
     @BeforeEach
     void setUp() throws Exception {
-        conn = DriverManager.getConnection(MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
-        try (Statement st = conn.createStatement()) {
-            st.execute("""
-                CREATE TABLE IF NOT EXISTS custos_storage (
-                  skey VARCHAR(255) PRIMARY KEY, svalue LONGBLOB NOT NULL, updated_at BIGINT NOT NULL)""");
+        ds = new MysqlDataSource();
+        ds.setUrl(MYSQL.getJdbcUrl());
+        ds.setUser(MYSQL.getUsername());
+        ds.setPassword(MYSQL.getPassword());
+        try (Connection c = ds.getConnection(); Statement st = c.createStatement()) {
+            st.execute("CREATE TABLE IF NOT EXISTS custos_storage (skey VARCHAR(255) PRIMARY KEY, svalue LONGBLOB NOT NULL, updated_at BIGINT NOT NULL)");
         }
-        storage = new MySqlStorage(conn, barrier());
+        JSqlClient sql = JimmerClients.of(ds);
+        storage = new JimmerStorage(sql, barrier());
     }
 
     @Test
@@ -160,30 +184,84 @@ class MySqlStorageIT {
     }
 
     @Test
-    void storedBytesAreCiphertextNotPlaintext() throws Exception {
+    void storedBytesAreCiphertext() throws Exception {
         storage.put("k2", "plaintext-marker".getBytes(StandardCharsets.UTF_8));
-        try (Statement st = conn.createStatement();
+        try (Connection c = ds.getConnection(); Statement st = c.createStatement();
              ResultSet rs = st.executeQuery("SELECT svalue FROM custos_storage WHERE skey='k2'")) {
             assertTrue(rs.next());
-            byte[] raw = rs.getBytes(1);
-            String asText = new String(raw, StandardCharsets.UTF_8);
-            assertFalse(asText.contains("plaintext-marker"), "落盘必须是密文");
+            assertFalse(new String(rs.getBytes(1), StandardCharsets.UTF_8).contains("plaintext-marker"));
         }
     }
 
     @Test
-    void getMissingReturnsEmpty() {
-        assertTrue(storage.get("nope").isEmpty());
+    void listByPrefix() {
+        storage.put("p/a", "1".getBytes());
+        storage.put("p/b", "2".getBytes());
+        storage.put("q/c", "3".getBytes());
+        assertEquals(2, storage.list("p/").size());
     }
 }
 ```
 
 - [ ] **Step 4: 运行测试，确认失败**
 
-Run: `mvn -q -pl engine test -Dtest=MySqlStorageIT`
-Expected: 编译失败（Storage/MySqlStorage 未定义）。
+Run: `mvn -q -pl engine test -Dtest=JimmerStorageIT`
+Expected: 编译失败（JimmerClients/StorageEntry/Storage/JimmerStorage 未定义）。
 
-- [ ] **Step 5: 实现 Storage 接口**
+- [ ] **Step 5: 写 JimmerClients 工厂**
+
+`engine/src/main/java/io/custos/engine/persistence/JimmerClients.java`:
+```java
+package io.custos.engine.persistence;
+
+import org.babyfish.jimmer.sql.JSqlClient;
+import org.babyfish.jimmer.sql.dialect.MySqlDialect;
+import org.babyfish.jimmer.sql.runtime.ConnectionManager;
+
+import javax.sql.DataSource;
+
+/** 由 DataSource 构建 JSqlClient（MySQL 方言）。app 模块用 Spring starter 装配，引擎/测试用此工厂。 */
+public final class JimmerClients {
+    private JimmerClients() {}
+
+    public static JSqlClient of(DataSource dataSource) {
+        return JSqlClient.newBuilder()
+                .setConnectionManager(ConnectionManager.simpleConnectionManager(dataSource))
+                .setDialect(new MySqlDialect())
+                .build();
+    }
+}
+```
+
+- [ ] **Step 6: 写 StorageEntry 实体**
+
+`engine/src/main/java/io/custos/engine/storage/StorageEntry.java`:
+```java
+package io.custos.engine.storage;
+
+import org.babyfish.jimmer.sql.Column;
+import org.babyfish.jimmer.sql.Entity;
+import org.babyfish.jimmer.sql.Id;
+import org.babyfish.jimmer.sql.Table;
+
+/** 通用密文 KV 行；value 为 Barrier 密文（明文加解密在 service 层）。列名避开 KEY/VALUE 保留字。 */
+@Entity
+@Table(name = "custos_storage")
+public interface StorageEntry {
+
+    @Id
+    @Column(name = "skey")
+    String key();
+
+    @Column(name = "svalue")
+    byte[] value();
+
+    @Column(name = "updated_at")
+    long updatedAt();
+}
+```
+
+- [ ] **Step 7: 写 Storage 接口 + JimmerStorage**
 
 `engine/src/main/java/io/custos/engine/storage/Storage.java`:
 ```java
@@ -192,7 +270,6 @@ package io.custos.engine.storage;
 import java.util.List;
 import java.util.Optional;
 
-/** 通用密文 KV 存储：所有 value 落盘前经 Barrier 加密，存储后端只见密文。 */
 public interface Storage {
     Optional<byte[]> get(String key);
     void put(String key, byte[] value);
@@ -201,153 +278,131 @@ public interface Storage {
 }
 ```
 
-- [ ] **Step 6: 实现 MySqlStorage**
-
-`engine/src/main/java/io/custos/engine/storage/MySqlStorage.java`:
+`engine/src/main/java/io/custos/engine/storage/JimmerStorage.java`:
 ```java
 package io.custos.engine.storage;
 
 import io.custos.engine.barrier.Barrier;
+import org.babyfish.jimmer.sql.JSqlClient;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
-/** MySQL 全密文存储：put 时 barrier.seal，get 时 barrier.open。 */
-public final class MySqlStorage implements Storage {
+/** Jimmer 全密文存储：put 时 barrier.seal，get 时 barrier.open；save 按 @Id upsert。 */
+public final class JimmerStorage implements Storage {
 
-    private final Connection conn;
+    private final JSqlClient sql;
     private final Barrier barrier;
 
-    public MySqlStorage(Connection conn, Barrier barrier) {
-        this.conn = conn;
+    public JimmerStorage(JSqlClient sql, Barrier barrier) {
+        this.sql = sql;
         this.barrier = barrier;
     }
 
     @Override
     public Optional<byte[]> get(String key) {
-        try (PreparedStatement ps = conn.prepareStatement("SELECT svalue FROM custos_storage WHERE skey=?")) {
-            ps.setString(1, key);
-            try (ResultSet rs = ps.executeQuery()) {
-                if (!rs.next()) return Optional.empty();
-                return Optional.of(barrier.open(rs.getBytes(1)));
-            }
-        } catch (Exception e) {
-            throw new IllegalStateException("storage get failed", e);
-        }
+        StorageEntry e = sql.getEntities().findById(StorageEntry.class, key);
+        return e == null ? Optional.empty() : Optional.of(barrier.open(e.value()));
     }
 
     @Override
     public void put(String key, byte[] value) {
         byte[] sealed = barrier.seal(value);
-        try (PreparedStatement ps = conn.prepareStatement(
-                "INSERT INTO custos_storage(skey,svalue,updated_at) VALUES(?,?,?) "
-              + "ON DUPLICATE KEY UPDATE svalue=VALUES(svalue), updated_at=VALUES(updated_at)")) {
-            ps.setString(1, key);
-            ps.setBytes(2, sealed);
-            ps.setLong(3, System.currentTimeMillis());
-            ps.executeUpdate();
-        } catch (Exception e) {
-            throw new IllegalStateException("storage put failed", e);
-        }
+        sql.getEntities().save(
+                StorageEntryDraft.$.produce(d -> {
+                    d.setKey(key);
+                    d.setValue(sealed);
+                    d.setUpdatedAt(System.currentTimeMillis());
+                })
+        );
     }
 
     @Override
     public void delete(String key) {
-        try (PreparedStatement ps = conn.prepareStatement("DELETE FROM custos_storage WHERE skey=?")) {
-            ps.setString(1, key);
-            ps.executeUpdate();
-        } catch (Exception e) {
-            throw new IllegalStateException("storage delete failed", e);
-        }
+        sql.getEntities().deleteById(StorageEntry.class, key);
     }
 
     @Override
     public List<String> list(String prefix) {
-        List<String> out = new ArrayList<>();
-        try (PreparedStatement ps = conn.prepareStatement("SELECT skey FROM custos_storage WHERE skey LIKE ?")) {
-            ps.setString(1, prefix + "%");
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) out.add(rs.getString(1));
-            }
-        } catch (Exception e) {
-            throw new IllegalStateException("storage list failed", e);
-        }
-        return out;
+        StorageEntryTable t = StorageEntryTable.$;
+        return sql.createQuery(t)
+                .where(t.key().like(prefix + "%"))
+                .select(t.key())
+                .execute();
     }
 }
 ```
+> `StorageEntryDraft` / `StorageEntryTable` 由 jimmer-apt 在编译时生成（首次 `mvn` 编译产生）。
 
-- [ ] **Step 7: 运行测试，确认通过**
+- [ ] **Step 8: 运行测试，确认通过**
 
-Run: `mvn -q -pl engine test -Dtest=MySqlStorageIT`
-Expected: PASS（3 个用例；首次会拉取 mysql:8.0 镜像）。
+Run: `mvn -q -pl engine test -Dtest=JimmerStorageIT`
+Expected: PASS（3 个用例；编译时生成 Jimmer 代码；首次拉取 mysql:8.0 镜像）。
 
-- [ ] **Step 8: 提交**
+- [ ] **Step 9: 提交**
 ```bash
-git add engine/pom.xml engine/src/main/resources/db/schema.sql engine/src/main/java/io/custos/engine/storage engine/src/test/java/io/custos/engine/storage
-git commit -m "feat(engine): MySQL ciphertext storage with barrier"
+git add engine/pom.xml engine/src/main/resources/db/schema.sql engine/src/main/java/io/custos/engine/persistence engine/src/main/java/io/custos/engine/storage engine/src/test/java/io/custos/engine/storage
+git commit -m "feat(engine): Jimmer ciphertext storage (entity + JSqlClient) with barrier"
 ```
 
 ---
 
-## Task 2: MySqlSealStore（把 SealStore 接到 MySQL）
+## Task 2: JimmerSealStore（SealStore 接到 Jimmer）
 
 **Files:**
-- Create: `engine/src/main/java/io/custos/engine/seal/MySqlSealStore.java`
-- Test: `engine/src/test/java/io/custos/engine/seal/MySqlSealStoreIT.java`
+- Create: `engine/src/main/java/io/custos/engine/seal/SealConfigEntry.java`
+- Create: `engine/src/main/java/io/custos/engine/seal/JimmerSealStore.java`
+- Test: `engine/src/test/java/io/custos/engine/seal/JimmerSealStoreIT.java`
 
-- [ ] **Step 1: 写失败测试（解封产物跨实例从 MySQL 恢复）**
+- [ ] **Step 1: 写失败测试（跨实例从 MySQL 恢复解封）**
 
-`engine/src/test/java/io/custos/engine/seal/MySqlSealStoreIT.java`:
+`engine/src/test/java/io/custos/engine/seal/JimmerSealStoreIT.java`:
 ```java
 package io.custos.engine.seal;
 
+import com.mysql.cj.jdbc.MysqlDataSource;
 import io.custos.engine.barrier.DefaultBarrier;
 import io.custos.engine.crypto.IntlSuite;
+import io.custos.engine.persistence.JimmerClients;
+import org.babyfish.jimmer.sql.JSqlClient;
 import org.junit.jupiter.api.*;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.Statement;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 @Testcontainers
-class MySqlSealStoreIT {
+class JimmerSealStoreIT {
 
     @Container
     static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0");
 
-    private Connection conn;
+    private JSqlClient sql;
 
     @BeforeEach
     void setUp() throws Exception {
-        conn = DriverManager.getConnection(MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
-        try (Statement st = conn.createStatement()) {
+        MysqlDataSource ds = new MysqlDataSource();
+        ds.setUrl(MYSQL.getJdbcUrl()); ds.setUser(MYSQL.getUsername()); ds.setPassword(MYSQL.getPassword());
+        try (Connection c = ds.getConnection(); Statement st = c.createStatement()) {
             st.execute("CREATE TABLE IF NOT EXISTS custos_seal_config (ckey VARCHAR(64) PRIMARY KEY, cval LONGBLOB NOT NULL)");
         }
+        sql = JimmerClients.of(ds);
     }
 
     @Test
-    void unsealRecoversFromMySqlAcrossInstances() {
-        MySqlSealStore store = new MySqlSealStore(conn);
-        List<byte[]> shares = new DefaultSealManager(new IntlSuite(), store).init(5, 3);
+    void unsealRecoversFromJimmerStoreAcrossInstances() {
+        List<byte[]> shares = new DefaultSealManager(new IntlSuite(), new JimmerSealStore(sql)).init(5, 3);
 
-        // 新实例 + 同一 MySQL store（模拟重启）
-        DefaultSealManager mgr = new DefaultSealManager(new IntlSuite(), new MySqlSealStore(conn));
+        DefaultSealManager mgr = new DefaultSealManager(new IntlSuite(), new JimmerSealStore(sql));
         assertTrue(mgr.status().sealed());
         mgr.submitUnsealKey(shares.get(0));
         mgr.submitUnsealKey(shares.get(2));
-        SealStatus s = mgr.submitUnsealKey(shares.get(4));
-        assertFalse(s.sealed());
+        assertFalse(mgr.submitUnsealKey(shares.get(4)).sealed());
 
         DefaultBarrier barrier = new DefaultBarrier(new IntlSuite(), mgr.keyring());
         assertArrayEquals("ok".getBytes(), barrier.open(barrier.seal("ok".getBytes())));
@@ -357,91 +412,108 @@ class MySqlSealStoreIT {
 
 - [ ] **Step 2: 运行测试，确认失败**
 
-Run: `mvn -q -pl engine test -Dtest=MySqlSealStoreIT`
-Expected: 编译失败（MySqlSealStore 未定义）。
+Run: `mvn -q -pl engine test -Dtest=JimmerSealStoreIT`
+Expected: 编译失败（SealConfigEntry/JimmerSealStore 未定义）。
 
-- [ ] **Step 3: 实现 MySqlSealStore**
+- [ ] **Step 3: 写 SealConfigEntry 实体**
 
-`engine/src/main/java/io/custos/engine/seal/MySqlSealStore.java`:
+`engine/src/main/java/io/custos/engine/seal/SealConfigEntry.java`:
 ```java
 package io.custos.engine.seal;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
+import org.babyfish.jimmer.sql.Column;
+import org.babyfish.jimmer.sql.Entity;
+import org.babyfish.jimmer.sql.Id;
+import org.babyfish.jimmer.sql.Table;
+
+@Entity
+@Table(name = "custos_seal_config")
+public interface SealConfigEntry {
+
+    @Id
+    @Column(name = "ckey")
+    String key();
+
+    @Column(name = "cval")
+    byte[] value();
+}
+```
+
+- [ ] **Step 4: 实现 JimmerSealStore**
+
+`engine/src/main/java/io/custos/engine/seal/JimmerSealStore.java`:
+```java
+package io.custos.engine.seal;
+
+import org.babyfish.jimmer.sql.JSqlClient;
+
 import java.util.Optional;
 
-/** SealStore 的 MySQL 实现（存于 custos_seal_config）。wrapped_barrier 为密文；threshold/shares 为元数据。 */
-public final class MySqlSealStore implements SealStore {
+/** SealStore 的 Jimmer 实现（custos_seal_config）。wrapped_barrier 为密文；threshold/shares 为元数据（4字节）。 */
+public final class JimmerSealStore implements SealStore {
 
-    private final Connection conn;
+    private final JSqlClient sql;
 
-    public MySqlSealStore(Connection conn) {
-        this.conn = conn;
+    public JimmerSealStore(JSqlClient sql) {
+        this.sql = sql;
     }
 
     @Override
     public Optional<byte[]> get(String key) {
-        try (PreparedStatement ps = conn.prepareStatement("SELECT cval FROM custos_seal_config WHERE ckey=?")) {
-            ps.setString(1, key);
-            try (ResultSet rs = ps.executeQuery()) {
-                return rs.next() ? Optional.of(rs.getBytes(1)) : Optional.empty();
-            }
-        } catch (Exception e) {
-            throw new IllegalStateException("seal store get failed", e);
-        }
+        SealConfigEntry e = sql.getEntities().findById(SealConfigEntry.class, key);
+        return e == null ? Optional.empty() : Optional.of(e.value());
     }
 
     @Override
     public void put(String key, byte[] value) {
-        try (PreparedStatement ps = conn.prepareStatement(
-                "INSERT INTO custos_seal_config(ckey,cval) VALUES(?,?) ON DUPLICATE KEY UPDATE cval=VALUES(cval)")) {
-            ps.setString(1, key);
-            ps.setBytes(2, value);
-            ps.executeUpdate();
-        } catch (Exception e) {
-            throw new IllegalStateException("seal store put failed", e);
-        }
+        sql.getEntities().save(
+                SealConfigEntryDraft.$.produce(d -> {
+                    d.setKey(key);
+                    d.setValue(value);
+                })
+        );
     }
 }
 ```
 
-- [ ] **Step 4: 运行测试，确认通过**
+- [ ] **Step 5: 运行测试，确认通过**
 
-Run: `mvn -q -pl engine test -Dtest=MySqlSealStoreIT`
+Run: `mvn -q -pl engine test -Dtest=JimmerSealStoreIT`
 Expected: PASS。
 
-- [ ] **Step 5: 提交**
+- [ ] **Step 6: 提交**
 ```bash
-git add engine/src/main/java/io/custos/engine/seal/MySqlSealStore.java engine/src/test/java/io/custos/engine/seal/MySqlSealStoreIT.java
-git commit -m "feat(engine): MySQL-backed seal store"
+git add engine/src/main/java/io/custos/engine/seal/SealConfigEntry.java engine/src/main/java/io/custos/engine/seal/JimmerSealStore.java engine/src/test/java/io/custos/engine/seal/JimmerSealStoreIT.java
+git commit -m "feat(engine): Jimmer-backed seal store"
 ```
 
 ---
 
-## Task 3: 哈希链防篡改审计
+## Task 3: 哈希链审计（Jimmer 实体）
 
 **Files:**
-- Create: `engine/src/main/java/io/custos/engine/audit/AuditRecord.java`
-- Create: `engine/src/main/java/io/custos/engine/audit/VerifyResult.java`
-- Create: `engine/src/main/java/io/custos/engine/audit/AuditLog.java`
+- Create: `engine/src/main/java/io/custos/engine/audit/AuditRow.java`
+- Create: `engine/src/main/java/io/custos/engine/audit/{AuditRecord,VerifyResult,AuditLog}.java`
 - Create: `engine/src/main/java/io/custos/engine/audit/HashChainAuditLog.java`
 - Test: `engine/src/test/java/io/custos/engine/audit/HashChainAuditLogIT.java`
 
-- [ ] **Step 1: 写失败测试（append→verify OK；改一条→verify 定位断链）**
+- [ ] **Step 1: 写失败测试（append→verify OK；改一条→定位断链；敏感脱敏）**
 
 `engine/src/test/java/io/custos/engine/audit/HashChainAuditLogIT.java`:
 ```java
 package io.custos.engine.audit;
 
+import com.mysql.cj.jdbc.MysqlDataSource;
 import io.custos.engine.crypto.IntlSuite;
+import io.custos.engine.persistence.JimmerClients;
+import org.babyfish.jimmer.sql.JSqlClient;
 import org.junit.jupiter.api.*;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.sql.Connection;
-import java.sql.DriverManager;
+import java.sql.ResultSet;
 import java.sql.Statement;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -452,13 +524,14 @@ class HashChainAuditLogIT {
     @Container
     static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0");
 
-    private Connection conn;
+    private MysqlDataSource ds;
     private HashChainAuditLog audit;
 
     @BeforeEach
     void setUp() throws Exception {
-        conn = DriverManager.getConnection(MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
-        try (Statement st = conn.createStatement()) {
+        ds = new MysqlDataSource();
+        ds.setUrl(MYSQL.getJdbcUrl()); ds.setUser(MYSQL.getUsername()); ds.setPassword(MYSQL.getPassword());
+        try (Connection c = ds.getConnection(); Statement st = c.createStatement()) {
             st.execute("""
               CREATE TABLE IF NOT EXISTS custos_audit (
                 seq BIGINT AUTO_INCREMENT PRIMARY KEY, ts BIGINT NOT NULL, actor VARCHAR(512) NOT NULL,
@@ -466,8 +539,8 @@ class HashChainAuditLogIT {
                 result_digest VARCHAR(128), sensitive_hmac VARCHAR(128),
                 prev_hash VARCHAR(128) NOT NULL, chain_hash VARCHAR(128) NOT NULL)""");
         }
-        byte[] auditKey = new byte[32];
-        audit = new HashChainAuditLog(conn, new IntlSuite(), auditKey);
+        JSqlClient sql = JimmerClients.of(ds);
+        audit = new HashChainAuditLog(sql, new IntlSuite(), new byte[32]);
     }
 
     private AuditRecord rec(String actor, String action) {
@@ -477,32 +550,29 @@ class HashChainAuditLogIT {
     @Test
     void appendThenVerifyPasses() {
         audit.append(rec("agentA", "read"));
-        audit.append(rec("agentA", "read"));
         audit.append(rec("agentB", "read"));
-        VerifyResult r = audit.verify();
-        assertTrue(r.ok(), "完整链应校验通过");
+        assertTrue(audit.verify().ok());
     }
 
     @Test
     void tamperingBreaksChain() throws Exception {
         audit.append(rec("agentA", "read"));
         audit.append(rec("agentA", "read"));
-        // 篡改第 1 条
-        try (Statement st = conn.createStatement()) {
+        try (Connection c = ds.getConnection(); Statement st = c.createStatement()) {
             st.executeUpdate("UPDATE custos_audit SET action='write' WHERE seq=1");
         }
-        VerifyResult r = audit.verify();
+        var r = audit.verify();
         assertFalse(r.ok());
         assertEquals(1L, r.brokenAtSeq());
     }
 
     @Test
-    void sensitiveFieldNotStoredInPlaintext() throws Exception {
-        audit.append(rec("agentA", "read"));   // sensitive = "pwd=xxx"
-        try (Statement st = conn.createStatement();
-             var rs = st.executeQuery("SELECT sensitive_hmac FROM custos_audit WHERE seq=1")) {
+    void sensitiveFieldHmacNotPlaintext() throws Exception {
+        audit.append(rec("agentA", "read"));
+        try (Connection c = ds.getConnection(); Statement st = c.createStatement();
+             ResultSet rs = st.executeQuery("SELECT sensitive_hmac FROM custos_audit WHERE seq=1")) {
             assertTrue(rs.next());
-            assertNotEquals("pwd=xxx", rs.getString(1), "敏感字段应 HMAC 脱敏");
+            assertNotEquals("pwd=xxx", rs.getString(1));
         }
     }
 }
@@ -513,24 +583,57 @@ class HashChainAuditLogIT {
 Run: `mvn -q -pl engine test -Dtest=HashChainAuditLogIT`
 Expected: 编译失败（audit 类未定义）。
 
-- [ ] **Step 3: 写 AuditRecord / VerifyResult / AuditLog**
+- [ ] **Step 3: 写 AuditRow 实体 + AuditRecord/VerifyResult/AuditLog**
+
+`engine/src/main/java/io/custos/engine/audit/AuditRow.java`:
+```java
+package io.custos.engine.audit;
+
+import org.babyfish.jimmer.sql.*;
+import org.jetbrains.annotations.Nullable;
+
+/** 审计行（只追加）。seq 自增主键。 */
+@Entity
+@Table(name = "custos_audit")
+public interface AuditRow {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    long seq();
+
+    long ts();
+    String actor();
+    @Nullable String task();
+    @Nullable String resource();
+    @Nullable String action();
+    @Nullable String decision();
+
+    @Column(name = "result_digest")
+    @Nullable String resultDigest();
+
+    @Column(name = "sensitive_hmac")
+    @Nullable String sensitiveHmac();
+
+    @Column(name = "prev_hash")
+    String prevHash();
+
+    @Column(name = "chain_hash")
+    String chainHash();
+}
+```
 
 `engine/src/main/java/io/custos/engine/audit/AuditRecord.java`:
 ```java
 package io.custos.engine.audit;
 
-/** 一条审计记录（sensitiveRaw 在落盘前会被 HMAC 脱敏，不存明文）。 */
-public record AuditRecord(
-        long ts, String actor, String task, String resource,
-        String action, String decision, String resultDigest, String sensitiveRaw) {
-}
+public record AuditRecord(long ts, String actor, String task, String resource,
+                          String action, String decision, String resultDigest, String sensitiveRaw) {}
 ```
 
 `engine/src/main/java/io/custos/engine/audit/VerifyResult.java`:
 ```java
 package io.custos.engine.audit;
 
-/** 链校验结果。ok=true 时 brokenAtSeq=-1。 */
 public record VerifyResult(boolean ok, long brokenAtSeq) {
     public static VerifyResult passed() { return new VerifyResult(true, -1); }
     public static VerifyResult brokenAt(long seq) { return new VerifyResult(false, seq); }
@@ -541,108 +644,92 @@ public record VerifyResult(boolean ok, long brokenAtSeq) {
 ```java
 package io.custos.engine.audit;
 
-/** 防篡改审计：append 只追加并维护哈希链；verify 重算链检测篡改。 */
 public interface AuditLog {
     void append(AuditRecord record);
     VerifyResult verify();
 }
 ```
 
-- [ ] **Step 4: 实现 HashChainAuditLog**
+- [ ] **Step 4: 实现 HashChainAuditLog（Jimmer DSL）**
 
 `engine/src/main/java/io/custos/engine/audit/HashChainAuditLog.java`:
 ```java
 package io.custos.engine.audit;
 
 import io.custos.engine.crypto.CipherSuite;
+import org.babyfish.jimmer.sql.JSqlClient;
 
 import java.nio.charset.StandardCharsets;
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.Statement;
 import java.util.HexFormat;
+import java.util.List;
 
-/** 哈希链审计：chain_hash_n = H(prev_hash || canonical(record_n))；敏感字段 HMAC 脱敏；只追加。 */
+/** 哈希链审计：chain_hash_n = H(prev_hash || canonical)；敏感字段 HMAC 脱敏；只追加。Jimmer 实体读写。 */
 public final class HashChainAuditLog implements AuditLog {
 
     private static final String GENESIS = "0".repeat(64);
 
-    private final Connection conn;
+    private final JSqlClient sql;
     private final CipherSuite suite;
     private final byte[] auditKey;
 
-    public HashChainAuditLog(Connection conn, CipherSuite suite, byte[] auditKey) {
-        this.conn = conn;
+    public HashChainAuditLog(JSqlClient sql, CipherSuite suite, byte[] auditKey) {
+        this.sql = sql;
         this.suite = suite;
         this.auditKey = auditKey.clone();
     }
 
     @Override
     public void append(AuditRecord r) {
-        try {
-            String prev = lastChainHash();
-            String sensitiveHmac = hex(suite.hmac(auditKey, nz(r.sensitiveRaw()).getBytes(StandardCharsets.UTF_8)));
-            String canonical = canonical(r, sensitiveHmac);
-            String chain = hex(suite.hash((prev + "|" + canonical).getBytes(StandardCharsets.UTF_8)));
-            try (PreparedStatement ps = conn.prepareStatement(
-                    "INSERT INTO custos_audit(ts,actor,task,resource,action,decision,result_digest,sensitive_hmac,prev_hash,chain_hash) "
-                  + "VALUES(?,?,?,?,?,?,?,?,?,?)")) {
-                ps.setLong(1, r.ts());
-                ps.setString(2, r.actor());
-                ps.setString(3, r.task());
-                ps.setString(4, r.resource());
-                ps.setString(5, r.action());
-                ps.setString(6, r.decision());
-                ps.setString(7, r.resultDigest());
-                ps.setString(8, sensitiveHmac);
-                ps.setString(9, prev);
-                ps.setString(10, chain);
-                ps.executeUpdate();
-            }
-        } catch (Exception e) {
-            throw new IllegalStateException("audit append failed", e);
-        }
+        String prev = lastChainHash();
+        String sensitiveHmac = hex(suite.hmac(auditKey, nz(r.sensitiveRaw()).getBytes(StandardCharsets.UTF_8)));
+        String canonical = canonical(r.ts(), r.actor(), r.task(), r.resource(), r.action(), r.decision(), r.resultDigest(), sensitiveHmac);
+        String chain = hex(suite.hash((prev + "|" + canonical).getBytes(StandardCharsets.UTF_8)));
+        sql.getEntities().save(
+                AuditRowDraft.$.produce(d -> {
+                    d.setTs(r.ts());
+                    d.setActor(r.actor());
+                    d.setTask(r.task());
+                    d.setResource(r.resource());
+                    d.setAction(r.action());
+                    d.setDecision(r.decision());
+                    d.setResultDigest(r.resultDigest());
+                    d.setSensitiveHmac(sensitiveHmac);
+                    d.setPrevHash(prev);
+                    d.setChainHash(chain);
+                    // seq 不设置 → INSERT，DB 自增
+                })
+        );
     }
 
     @Override
     public VerifyResult verify() {
-        try (Statement st = conn.createStatement();
-             ResultSet rs = st.executeQuery(
-                "SELECT seq,ts,actor,task,resource,action,decision,result_digest,sensitive_hmac,prev_hash,chain_hash "
-              + "FROM custos_audit ORDER BY seq ASC")) {
-            String expectedPrev = GENESIS;
-            while (rs.next()) {
-                String prev = rs.getString("prev_hash");
-                if (!prev.equals(expectedPrev)) return VerifyResult.brokenAt(rs.getLong("seq"));
-                AuditRecord r = new AuditRecord(rs.getLong("ts"), rs.getString("actor"), rs.getString("task"),
-                        rs.getString("resource"), rs.getString("action"), rs.getString("decision"),
-                        rs.getString("result_digest"), null);
-                String canonical = canonical(r, rs.getString("sensitive_hmac"));
-                String recompute = hex(suite.hash((prev + "|" + canonical).getBytes(StandardCharsets.UTF_8)));
-                if (!recompute.equals(rs.getString("chain_hash"))) return VerifyResult.brokenAt(rs.getLong("seq"));
-                expectedPrev = rs.getString("chain_hash");
-            }
-            return VerifyResult.passed();
-        } catch (Exception e) {
-            throw new IllegalStateException("audit verify failed", e);
+        AuditRowTable t = AuditRowTable.$;
+        List<AuditRow> rows = sql.createQuery(t).orderBy(t.seq().asc()).select(t).execute();
+        String expectedPrev = GENESIS;
+        for (AuditRow row : rows) {
+            if (!row.prevHash().equals(expectedPrev)) return VerifyResult.brokenAt(row.seq());
+            String canonical = canonical(row.ts(), row.actor(), row.task(), row.resource(),
+                    row.action(), row.decision(), row.resultDigest(), row.sensitiveHmac());
+            String recompute = hex(suite.hash((row.prevHash() + "|" + canonical).getBytes(StandardCharsets.UTF_8)));
+            if (!recompute.equals(row.chainHash())) return VerifyResult.brokenAt(row.seq());
+            expectedPrev = row.chainHash();
         }
+        return VerifyResult.passed();
     }
 
-    private String lastChainHash() throws Exception {
-        try (Statement st = conn.createStatement();
-             ResultSet rs = st.executeQuery("SELECT chain_hash FROM custos_audit ORDER BY seq DESC LIMIT 1")) {
-            return rs.next() ? rs.getString(1) : GENESIS;
-        }
+    private String lastChainHash() {
+        AuditRowTable t = AuditRowTable.$;
+        List<String> last = sql.createQuery(t).orderBy(t.seq().desc()).select(t.chainHash()).limit(1).execute();
+        return last.isEmpty() ? GENESIS : last.get(0);
     }
 
-    private static String canonical(AuditRecord r, String sensitiveHmac) {
-        return String.join("|", String.valueOf(r.ts()), nz(r.actor()), nz(r.task()), nz(r.resource()),
-                nz(r.action()), nz(r.decision()), nz(r.resultDigest()), nz(sensitiveHmac));
+    private static String canonical(long ts, String actor, String task, String resource,
+                                    String action, String decision, String resultDigest, String sensitiveHmac) {
+        return String.join("|", String.valueOf(ts), nz(actor), nz(task), nz(resource),
+                nz(action), nz(decision), nz(resultDigest), nz(sensitiveHmac));
     }
 
     private static String nz(String s) { return s == null ? "" : s; }
-
     private static String hex(byte[] b) { return HexFormat.of().formatHex(b); }
 }
 ```
@@ -655,18 +742,16 @@ Expected: PASS（3 个用例）。
 - [ ] **Step 6: 提交**
 ```bash
 git add engine/src/main/java/io/custos/engine/audit engine/src/test/java/io/custos/engine/audit
-git commit -m "feat(engine): tamper-evident hash-chain audit log"
+git commit -m "feat(engine): tamper-evident hash-chain audit via Jimmer entity"
 ```
 
 ---
 
-## Task 4: 租约管理（TTL/续约/撤销/前缀撤销）
+## Task 4: 租约管理（Jimmer 实体）
 
 **Files:**
-- Create: `engine/src/main/java/io/custos/engine/lease/Lease.java`
-- Create: `engine/src/main/java/io/custos/engine/lease/Revoker.java`
-- Create: `engine/src/main/java/io/custos/engine/lease/LeaseManager.java`
-- Create: `engine/src/main/java/io/custos/engine/lease/DefaultLeaseManager.java`
+- Create: `engine/src/main/java/io/custos/engine/lease/LeaseRow.java`
+- Create: `engine/src/main/java/io/custos/engine/lease/{Lease,Revoker,LeaseManager,DefaultLeaseManager}.java`
 - Test: `engine/src/test/java/io/custos/engine/lease/DefaultLeaseManagerIT.java`
 
 - [ ] **Step 1: 写失败测试**
@@ -675,13 +760,15 @@ git commit -m "feat(engine): tamper-evident hash-chain audit log"
 ```java
 package io.custos.engine.lease;
 
+import com.mysql.cj.jdbc.MysqlDataSource;
+import io.custos.engine.persistence.JimmerClients;
+import org.babyfish.jimmer.sql.JSqlClient;
 import org.junit.jupiter.api.*;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.Statement;
 import java.time.Duration;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -694,46 +781,45 @@ class DefaultLeaseManagerIT {
     @Container
     static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0");
 
-    private Connection conn;
     private DefaultLeaseManager leases;
 
     @BeforeEach
     void setUp() throws Exception {
-        conn = DriverManager.getConnection(MYSQL.getJdbcUrl(), MYSQL.getUsername(), MYSQL.getPassword());
-        try (Statement st = conn.createStatement()) {
+        MysqlDataSource ds = new MysqlDataSource();
+        ds.setUrl(MYSQL.getJdbcUrl()); ds.setUser(MYSQL.getUsername()); ds.setPassword(MYSQL.getPassword());
+        try (Connection c = ds.getConnection(); Statement st = c.createStatement()) {
             st.execute("""
               CREATE TABLE IF NOT EXISTS custos_lease (
-                lease_id VARCHAR(128) PRIMARY KEY, resource_path VARCHAR(512) NOT NULL,
+                lease_id VARCHAR(160) PRIMARY KEY, resource_path VARCHAR(512) NOT NULL,
                 issued_at BIGINT NOT NULL, expire_at BIGINT NOT NULL, revoked TINYINT NOT NULL DEFAULT 0)""");
         }
-        leases = new DefaultLeaseManager(conn);
+        JSqlClient sql = JimmerClients.of(ds);
+        leases = new DefaultLeaseManager(sql);
     }
 
     @Test
-    void revokeCallsRevokerAndMarksRevoked() {
+    void revokeCallsRevoker() {
         AtomicInteger revoked = new AtomicInteger();
-        Lease lease = leases.register("db/creds/orders-ro/abc", Duration.ofHours(1), l -> revoked.incrementAndGet());
+        Lease lease = leases.register("db/creds/orders-ro/a", Duration.ofHours(1), l -> revoked.incrementAndGet());
         leases.revoke(lease.leaseId());
         assertEquals(1, revoked.get());
     }
 
     @Test
     void revokePrefixRevokesSubtree() {
-        AtomicInteger revoked = new AtomicInteger();
-        Revoker r = l -> revoked.incrementAndGet();
+        AtomicInteger n = new AtomicInteger();
+        Revoker r = l -> n.incrementAndGet();
         leases.register("db/creds/orders-ro/a", Duration.ofHours(1), r);
         leases.register("db/creds/orders-ro/b", Duration.ofHours(1), r);
         leases.register("db/creds/other/c", Duration.ofHours(1), r);
-        int n = leases.revokePrefix("db/creds/orders-ro/");
-        assertEquals(2, n);
-        assertEquals(2, revoked.get());
+        assertEquals(2, leases.revokePrefix("db/creds/orders-ro/"));
+        assertEquals(2, n.get());
     }
 
     @Test
     void renewExtendsExpiry() {
         Lease lease = leases.register("db/creds/x", Duration.ofMinutes(10), l -> {});
-        Lease renewed = leases.renew(lease.leaseId(), Duration.ofHours(2));
-        assertTrue(renewed.expireAt() > lease.expireAt());
+        assertTrue(leases.renew(lease.leaseId(), Duration.ofHours(2)).expireAt() > lease.expireAt());
     }
 }
 ```
@@ -743,7 +829,34 @@ class DefaultLeaseManagerIT {
 Run: `mvn -q -pl engine test -Dtest=DefaultLeaseManagerIT`
 Expected: 编译失败（lease 类未定义）。
 
-- [ ] **Step 3: 写 Lease / Revoker / LeaseManager**
+- [ ] **Step 3: 写 LeaseRow 实体 + Lease/Revoker/LeaseManager**
+
+`engine/src/main/java/io/custos/engine/lease/LeaseRow.java`:
+```java
+package io.custos.engine.lease;
+
+import org.babyfish.jimmer.sql.*;
+
+@Entity
+@Table(name = "custos_lease")
+public interface LeaseRow {
+
+    @Id
+    @Column(name = "lease_id")
+    String leaseId();
+
+    @Column(name = "resource_path")
+    String resourcePath();
+
+    @Column(name = "issued_at")
+    long issuedAt();
+
+    @Column(name = "expire_at")
+    long expireAt();
+
+    boolean revoked();
+}
+```
 
 `engine/src/main/java/io/custos/engine/lease/Lease.java`:
 ```java
@@ -756,7 +869,6 @@ public record Lease(String leaseId, String resourcePath, long issuedAt, long exp
 ```java
 package io.custos.engine.lease;
 
-/** 撤销回调：如动态 DB engine 在此执行 DROP USER。 */
 @FunctionalInterface
 public interface Revoker {
     void revoke(Lease lease);
@@ -771,23 +883,21 @@ import java.time.Duration;
 
 public interface LeaseManager {
     Lease register(String resourcePath, Duration ttl, Revoker revoker);
-    Lease renew(String leaseId, Duration increment);   // increment 从当前时间起算
+    Lease renew(String leaseId, Duration increment);
     void revoke(String leaseId);
-    int revokePrefix(String prefix);                    // 前缀批量撤销，返回撤销数
+    int revokePrefix(String prefix);
 }
 ```
 
-- [ ] **Step 4: 实现 DefaultLeaseManager**
+- [ ] **Step 4: 实现 DefaultLeaseManager（Jimmer DSL + 后台扫描）**
 
 `engine/src/main/java/io/custos/engine/lease/DefaultLeaseManager.java`:
 ```java
 package io.custos.engine.lease;
 
-import java.sql.Connection;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
+import org.babyfish.jimmer.sql.JSqlClient;
+
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -795,15 +905,15 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
-/** 租约管理：register/renew/revoke/revokePrefix，后台扫描到期自动撤销。Revoker 留内存映射（MVP 单节点）。 */
+/** 租约：register/renew/revoke/revokePrefix；后台扫描到期自动撤销。Revoker 留内存映射（MVP 单节点）。 */
 public final class DefaultLeaseManager implements LeaseManager {
 
-    private final Connection conn;
+    private final JSqlClient sql;
     private final ConcurrentHashMap<String, Revoker> revokers = new ConcurrentHashMap<>();
     private final ScheduledExecutorService scanner = Executors.newSingleThreadScheduledExecutor();
 
-    public DefaultLeaseManager(Connection conn) {
-        this.conn = conn;
+    public DefaultLeaseManager(JSqlClient sql) {
+        this.sql = sql;
         scanner.scheduleAtFixedRate(this::sweepExpired, 1, 1, TimeUnit.SECONDS);
     }
 
@@ -812,16 +922,13 @@ public final class DefaultLeaseManager implements LeaseManager {
         String id = resourcePath + "/" + UUID.randomUUID();
         long now = System.currentTimeMillis();
         long expire = now + ttl.toMillis();
-        try (PreparedStatement ps = conn.prepareStatement(
-                "INSERT INTO custos_lease(lease_id,resource_path,issued_at,expire_at,revoked) VALUES(?,?,?,?,0)")) {
-            ps.setString(1, id);
-            ps.setString(2, resourcePath);
-            ps.setLong(3, now);
-            ps.setLong(4, expire);
-            ps.executeUpdate();
-        } catch (Exception e) {
-            throw new IllegalStateException("lease register failed", e);
-        }
+        sql.getEntities().save(LeaseRowDraft.$.produce(d -> {
+            d.setLeaseId(id);
+            d.setResourcePath(resourcePath);
+            d.setIssuedAt(now);
+            d.setExpireAt(expire);
+            d.setRevoked(false);
+        }));
         revokers.put(id, revoker);
         return new Lease(id, resourcePath, now, expire);
     }
@@ -829,81 +936,58 @@ public final class DefaultLeaseManager implements LeaseManager {
     @Override
     public Lease renew(String leaseId, Duration increment) {
         long expire = System.currentTimeMillis() + increment.toMillis();
-        try (PreparedStatement ps = conn.prepareStatement(
-                "UPDATE custos_lease SET expire_at=? WHERE lease_id=? AND revoked=0")) {
-            ps.setLong(1, expire);
-            ps.setString(2, leaseId);
-            if (ps.executeUpdate() == 0) throw new IllegalStateException("lease not found or revoked: " + leaseId);
-        } catch (Exception e) {
-            throw new IllegalStateException("lease renew failed", e);
-        }
-        return load(leaseId);
+        // 残缺对象保存：只更新 expire_at
+        sql.getEntities().save(LeaseRowDraft.$.produce(d -> {
+            d.setLeaseId(leaseId);
+            d.setExpireAt(expire);
+        }));
+        LeaseRow row = sql.getEntities().findById(LeaseRow.class, leaseId);
+        return new Lease(leaseId, row.resourcePath(), row.issuedAt(), row.expireAt());
     }
 
     @Override
     public void revoke(String leaseId) {
-        Lease lease = load(leaseId);
+        LeaseRow row = sql.getEntities().findById(LeaseRow.class, leaseId);
+        if (row == null) return;
         Revoker r = revokers.remove(leaseId);
-        if (r != null) r.revoke(lease);
-        markRevoked(leaseId);
+        if (r != null) r.revoke(new Lease(leaseId, row.resourcePath(), row.issuedAt(), row.expireAt()));
+        sql.getEntities().save(LeaseRowDraft.$.produce(d -> {
+            d.setLeaseId(leaseId);
+            d.setRevoked(true);
+        }));
     }
 
     @Override
     public int revokePrefix(String prefix) {
-        List<String> ids = new ArrayList<>();
-        try (PreparedStatement ps = conn.prepareStatement(
-                "SELECT lease_id FROM custos_lease WHERE resource_path LIKE ? AND revoked=0")) {
-            ps.setString(1, prefix + "%");
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) ids.add(rs.getString(1));
-            }
-        } catch (Exception e) {
-            throw new IllegalStateException("lease revokePrefix query failed", e);
-        }
-        for (String id : ids) revoke(id);
+        LeaseRowTable t = LeaseRowTable.$;
+        List<String> ids = sql.createQuery(t)
+                .where(t.resourcePath().like(prefix + "%"))
+                .where(t.revoked().eq(false))
+                .select(t.leaseId())
+                .execute();
+        ids.forEach(this::revoke);
         return ids.size();
     }
 
     private void sweepExpired() {
-        long now = System.currentTimeMillis();
-        List<String> expired = new ArrayList<>();
-        try (PreparedStatement ps = conn.prepareStatement(
-                "SELECT lease_id FROM custos_lease WHERE expire_at<? AND revoked=0")) {
-            ps.setLong(1, now);
-            try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) expired.add(rs.getString(1));
+        try {
+            LeaseRowTable t = LeaseRowTable.$;
+            long now = System.currentTimeMillis();
+            List<String> expired = sql.createQuery(t)
+                    .where(t.expireAt().lt(now))
+                    .where(t.revoked().eq(false))
+                    .select(t.leaseId())
+                    .execute();
+            for (String id : expired) {
+                try { revoke(id); } catch (RuntimeException ignore) { /* 重试 + 告警（计划 5 接监控）*/ }
             }
-        } catch (Exception e) {
-            return;   // 下个周期重试
-        }
-        for (String id : expired) {
-            try { revoke(id); } catch (RuntimeException ignore) { /* 重试 + 告警（计划 5 接监控）*/ }
-        }
-    }
-
-    private Lease load(String leaseId) {
-        try (PreparedStatement ps = conn.prepareStatement(
-                "SELECT resource_path,issued_at,expire_at FROM custos_lease WHERE lease_id=?")) {
-            ps.setString(1, leaseId);
-            try (ResultSet rs = ps.executeQuery()) {
-                if (!rs.next()) throw new IllegalStateException("lease not found: " + leaseId);
-                return new Lease(leaseId, rs.getString(1), rs.getLong(2), rs.getLong(3));
-            }
-        } catch (Exception e) {
-            throw new IllegalStateException("lease load failed", e);
-        }
-    }
-
-    private void markRevoked(String leaseId) {
-        try (PreparedStatement ps = conn.prepareStatement("UPDATE custos_lease SET revoked=1 WHERE lease_id=?")) {
-            ps.setString(1, leaseId);
-            ps.executeUpdate();
-        } catch (Exception e) {
-            throw new IllegalStateException("lease markRevoked failed", e);
+        } catch (RuntimeException ignore) {
+            // 下个周期重试
         }
     }
 }
 ```
+> 说明：Jimmer `save` 对带 `@Id` 且只设置部分标量的对象执行**仅更新所设列**（残缺对象保存），因此 `renew`/`revoke` 只改 expire_at / revoked。
 
 - [ ] **Step 5: 运行测试，确认通过**
 
@@ -913,25 +997,29 @@ Expected: PASS（3 个用例）。
 - [ ] **Step 6: 提交**
 ```bash
 git add engine/src/main/java/io/custos/engine/lease engine/src/test/java/io/custos/engine/lease
-git commit -m "feat(engine): lease manager with TTL, revoke, prefix-revoke, auto-expiry"
+git commit -m "feat(engine): lease manager via Jimmer entity (TTL, revoke, prefix, auto-expiry)"
 ```
 
 ---
 
-## Task 5: 动态 MySQL 只读凭证（CREATE/DROP USER + 租约）
+## Task 5: 动态 MySQL 只读凭证（裸 JDBC 账号管理 + Jimmer 租约）
+
+> **边界**：`CREATE/DROP USER`、`GRANT` 是目标库的 DDL/账号管理，**非 ORM 操作 → 用裸 JDBC admin 连接**；租约持久化复用 Task 4 的 Jimmer `LeaseManager`。
 
 **Files:**
+- Create: `engine/src/main/java/io/custos/engine/secrets/IssuedCred.java`
 - Create: `engine/src/main/java/io/custos/engine/secrets/DynamicDbCredentials.java`
 - Test: `engine/src/test/java/io/custos/engine/secrets/DynamicDbCredentialsIT.java`
 
-- [ ] **Step 1: 写失败测试（签发临时只读账号→可查→撤销后失效）**
+- [ ] **Step 1: 写失败测试（签发临时只读账号→可查不可写→撤销后失效）**
 
 `engine/src/test/java/io/custos/engine/secrets/DynamicDbCredentialsIT.java`:
 ```java
 package io.custos.engine.secrets;
 
+import com.mysql.cj.jdbc.MysqlDataSource;
 import io.custos.engine.lease.DefaultLeaseManager;
-import io.custos.engine.lease.Lease;
+import io.custos.engine.persistence.JimmerClients;
 import org.junit.jupiter.api.*;
 import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -958,30 +1046,32 @@ class DynamicDbCredentialsIT {
     void setUp() throws Exception {
         admin = DriverManager.getConnection(MYSQL.getJdbcUrl(), "root", "root");
         try (Statement st = admin.createStatement()) {
-            st.execute("CREATE TABLE IF NOT EXISTS custos_lease (lease_id VARCHAR(128) PRIMARY KEY, resource_path VARCHAR(512), issued_at BIGINT, expire_at BIGINT, revoked TINYINT DEFAULT 0)");
+            st.execute("CREATE TABLE IF NOT EXISTS custos_lease (lease_id VARCHAR(160) PRIMARY KEY, resource_path VARCHAR(512), issued_at BIGINT, expire_at BIGINT, revoked TINYINT DEFAULT 0)");
             st.execute("CREATE DATABASE IF NOT EXISTS appdb");
             st.execute("CREATE TABLE IF NOT EXISTS appdb.orders (id INT)");
             st.execute("INSERT INTO appdb.orders VALUES (1)");
         }
-        creds = new DynamicDbCredentials(admin, new DefaultLeaseManager(admin), MYSQL.getJdbcUrl());
+        MysqlDataSource ds = new MysqlDataSource();
+        ds.setUrl(MYSQL.getJdbcUrl()); ds.setUser("root"); ds.setPassword("root");
+        creds = new DynamicDbCredentials(admin, new DefaultLeaseManager(JimmerClients.of(ds)), MYSQL.getJdbcUrl());
     }
 
     @Test
-    void issuedCredentialCanReadButCannotWrite() throws Exception {
+    void issuedCredReadsButCannotWrite() throws Exception {
         IssuedCred c = creds.issueReadonly("appdb", Duration.ofHours(1));
         try (Connection user = DriverManager.getConnection(MYSQL.getJdbcUrl(), c.username(), c.password());
              Statement st = user.createStatement()) {
-            assertTrue(st.executeQuery("SELECT COUNT(*) FROM appdb.orders").next());     // 只读可查
-            assertThrows(SQLException.class, () -> st.executeUpdate("INSERT INTO appdb.orders VALUES (2)")); // 写被拒
+            assertTrue(st.executeQuery("SELECT COUNT(*) FROM appdb.orders").next());
+            assertThrows(SQLException.class, () -> st.executeUpdate("INSERT INTO appdb.orders VALUES (2)"));
         }
     }
 
     @Test
-    void revokingLeaseDropsUser() throws Exception {
+    void revokingDropsUser() throws Exception {
         IssuedCred c = creds.issueReadonly("appdb", Duration.ofHours(1));
         creds.revoke(c.leaseId());
         assertThrows(SQLException.class, () ->
-                DriverManager.getConnection(MYSQL.getJdbcUrl(), c.username(), c.password()));   // 账号已 DROP
+                DriverManager.getConnection(MYSQL.getJdbcUrl(), c.username(), c.password()));
     }
 }
 ```
@@ -989,9 +1079,9 @@ class DynamicDbCredentialsIT {
 - [ ] **Step 2: 运行测试，确认失败**
 
 Run: `mvn -q -pl engine test -Dtest=DynamicDbCredentialsIT`
-Expected: 编译失败（DynamicDbCredentials / IssuedCred 未定义）。
+Expected: 编译失败（IssuedCred/DynamicDbCredentials 未定义）。
 
-- [ ] **Step 3: 写 IssuedCred 与 DynamicDbCredentials**
+- [ ] **Step 3: 写 IssuedCred + DynamicDbCredentials（裸 JDBC 账号管理）**
 
 `engine/src/main/java/io/custos/engine/secrets/IssuedCred.java`:
 ```java
@@ -1014,10 +1104,13 @@ import java.sql.Statement;
 import java.time.Duration;
 import java.util.HexFormat;
 
-/** 动态 DB 只读凭证：现场 CREATE USER + GRANT SELECT，登记租约；撤销时 DROP USER。 */
+/**
+ * 动态 DB 只读凭证：现场 CREATE USER + GRANT SELECT（裸 JDBC，因 ORM 不做账号 DDL），
+ * 登记 Jimmer 租约；撤销时 DROP USER。用户名/密码用十六进制（仅 [0-9a-f]）避免标识符注入。
+ */
 public final class DynamicDbCredentials {
 
-    private final Connection admin;          // 受控的根/管理连接
+    private final Connection admin;
     private final LeaseManager leases;
     private final String jdbcUrl;
     private final SecureRandom random = new SecureRandom();
@@ -1051,7 +1144,7 @@ public final class DynamicDbCredentials {
             st.execute("DROP USER IF EXISTS '" + user + "'@'%'");
             st.execute("FLUSH PRIVILEGES");
         } catch (Exception e) {
-            throw new IllegalStateException("drop user failed: " + user, e);   // 由 Lease 层重试+告警
+            throw new IllegalStateException("drop user failed: " + user, e);
         }
     }
 
@@ -1063,8 +1156,6 @@ public final class DynamicDbCredentials {
 }
 ```
 
-> 注：用户名/密码用十六进制（仅 [0-9a-f]），避免 SQL 字符串注入风险；schema 用反引号包裹。生产应进一步用参数化/标识符白名单（计划 5 加固）。
-
 - [ ] **Step 4: 运行测试，确认通过**
 
 Run: `mvn -q -pl engine test -Dtest=DynamicDbCredentialsIT`
@@ -1073,22 +1164,23 @@ Expected: PASS（2 个用例）。
 - [ ] **Step 5: 运行全部 engine 测试，确认无回归**
 
 Run: `mvn -q -pl engine test`
-Expected: 全部 PASS（计划 1 + 计划 2 累计 ~30 用例）。
+Expected: 计划 1（crypto/barrier/shamir/seal）+ 计划 2（storage/sealstore/audit/lease/creds）全部 PASS。
 
 - [ ] **Step 6: 提交**
 ```bash
 git add engine/src/main/java/io/custos/engine/secrets engine/src/test/java/io/custos/engine/secrets
-git commit -m "feat(engine): dynamic MySQL read-only credentials with lease revocation"
+git commit -m "feat(engine): dynamic MySQL read-only credentials (raw JDBC user mgmt + Jimmer lease)"
 ```
 
 ---
 
-## Self-Review（对照 spec §3.4–3.6、§4）
+## Self-Review（对照 spec §3.4–3.6、§4、ADR-8）
 
-- **Spec 覆盖**：Storage(§3.4 + schema §4)→Task 1；MySQL SealStore（衔接计划 1）→Task 2；哈希链审计(§3.6)→Task 3；Lease(§3.5)→Task 4；动态 DB 凭证(§3 broker `CredIssuer` 的引擎侧 + `docs/design/06` §3)→Task 5。
-- **类型一致性**：`Storage.get/put/delete/list`、`SealStore.get/put`（与计划 1 一致）、`AuditLog.append/verify` + `AuditRecord`/`VerifyResult`、`LeaseManager.register/renew/revoke/revokePrefix` + `Lease`/`Revoker`、`DynamicDbCredentials.issueReadonly/revoke` + `IssuedCred` 跨任务一致。
-- **占位扫描**：无 TODO/TBD；每个代码步骤含完整实现。
-- **安全留痕**：落盘密文（Task 1 断言密文）、审计脱敏+防篡改（Task 3 断言）、撤销真删账号（Task 5 断言）。SQL 注入面已用十六进制标识符 + 反引号收窄，并标注计划 5 进一步加固。
-- **可独立交付**：本计划产物 + 计划 1 = 一个可单测/集成测试的完整引擎（加密存储/解封/审计/租约/动态凭证）。
+- **Spec 覆盖**：Storage(§3.4 → Jimmer)→Task 1；SealStore→Task 2；哈希链审计(§3.6)→Task 3；Lease(§3.5)→Task 4；动态 DB 凭证(详设 06 §3)→Task 5。
+- **ADR-8 落地**：自身元数据表（storage/seal_config/audit/lease）全部 **Jimmer 实体 + JSqlClient**；**裸 JDBC 仅用于** Task 5 的 `CREATE/DROP USER`（账号 DDL）。加密边界：`StorageEntry.value`/`SealConfigEntry.value` 存 Barrier 密文，加解密在 `JimmerStorage`/service 层，Jimmer 不接触明文（Task 1 断言密文）。
+- **类型一致性**：`Storage`、`SealStore`（计划 1）、`AuditLog`/`AuditRecord`/`VerifyResult`、`LeaseManager`/`Lease`/`Revoker`、`DynamicDbCredentials`/`IssuedCred` 接口与计划 1/3/5 一致；Jimmer 生成类 `XxxDraft`/`XxxTable` 由 jimmer-apt 编译时产生。
+- **占位扫描**：无 TODO/TBD。两处注释说明（残缺对象保存语义、Jimmer 生成类）属机制解释，非缺失。
+- **Jimmer API 准确性**：`JSqlClient.newBuilder().setConnectionManager(ConnectionManager.simpleConnectionManager(ds)).setDialect(new MySqlDialect())`、`getEntities().save/findById/deleteById`、`createQuery(Table.$).where(...).select(...).execute()`、`XxxDraft.$.produce(...)` 均据 Jimmer 0.10.10 源码核准；列名用 `@Column` 避开 KEY/VALUE 保留字。
+- **可独立交付**：本计划 + 计划 1 = 可单测/集成测试的完整引擎（Jimmer 持久化 + 加密/解封/审计/租约/动态凭证）。
 
-> **下一计划**：3/5 身份层（JWT 签发/校验，复用 IntlSuite ECDSA）。
+> **下一计划**：3/5 身份层（JWT）——不变（不依赖持久化）。

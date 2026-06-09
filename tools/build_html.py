@@ -32,6 +32,7 @@ DOCS = [
     ("docs/research/casbin.md", "r-casbin", "竞品笔记", "Casbin（落地内核）"),
     ("docs/research/nacos.md", "r-nacos", "竞品笔记", "Nacos（护城河）"),
     ("docs/research/infisical.md", "r-infisical", "竞品笔记", "Infisical（直接竞品）"),
+    ("docs/research/jimmer.md", "r-jimmer", "竞品笔记", "Jimmer（持久化 ORM 选型）"),
 
     ("docs/references/mcp-sep-835.md", "ref-mcp", "引用资料", "MCP / SEP-835"),
     ("docs/references/oauth2-token-exchange-obo.md", "ref-oauth", "引用资料", "OAuth2 Token-Exchange / OBO"),
@@ -41,9 +42,18 @@ DOCS = [
     ("docs/references/casbin-perm-model.md", "ref-casbin", "引用资料", "Casbin PERM 模型"),
     ("docs/references/nacos-mcp-registry-config.md", "ref-nacos", "引用资料", "Nacos MCP / 配置热更新"),
     ("docs/references/gm-crypto-sm2-sm3-sm4.md", "ref-gm", "引用资料", "国密 SM2/SM3/SM4"),
+
+    ("docs/superpowers/specs/2026-06-09-custos-overall-architecture-spec.md", "spec-overall", "规格", "整体架构 spec"),
+    ("docs/superpowers/specs/2026-06-09-custos-mvp-v0.1-design.md", "spec-mvp", "规格", "MVP v0.1 接口契约 spec"),
+
+    ("docs/superpowers/plans/2026-06-09-custos-mvp-v0.1-engine-foundation.md", "plan-1", "实现计划", "1/5 引擎密码学基座"),
+    ("docs/superpowers/plans/2026-06-09-custos-mvp-v0.1-engine-persistence.md", "plan-2", "实现计划", "2/5 引擎持久化(Jimmer)"),
+    ("docs/superpowers/plans/2026-06-09-custos-mvp-v0.1-identity-jwt.md", "plan-3", "实现计划", "3/5 身份 JWT"),
+    ("docs/superpowers/plans/2026-06-09-custos-mvp-v0.1-authz-nacos.md", "plan-4", "实现计划", "4/5 策略+Nacos 秒级吊销"),
+    ("docs/superpowers/plans/2026-06-09-custos-mvp-v0.1-broker-demo.md", "plan-5", "实现计划", "5/5 经纪+MCP+demo"),
 ]
 
-GROUP_ORDER = ["开始", "设计文档", "竞品笔记", "引用资料"]
+GROUP_ORDER = ["开始", "设计文档", "竞品笔记", "引用资料", "规格", "实现计划"]
 
 
 def read(rel):

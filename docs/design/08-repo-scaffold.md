@@ -76,7 +76,8 @@ custos/
 | 密码学 | **BouncyCastle（+ GM 国密）**；可选 **Tongsuo(铜锁)** 经 JNI/TLCP | 审计充分；国密合规（自主可控）|
 | 授权内核 | **jCasbin** | 国产 Apache，Java 同栈（`04`）|
 | 控制面 | **nacos-client / Spring Cloud Alibaba Nacos** | 护城河，国产 |
-| 存储 | **MySQL**（JDBC/MyBatis）全密文 | PRD 指定；后续 Raft/JRaft（HA）|
+| 持久化 ORM | **Jimmer**（不可变实体 + 类型安全 DSL，Apache-2.0，国内活跃）| 接管 Custos 自身元数据表；无 N+1、与 Spring 栈一致（ADR-8 / `../research/jimmer.md`）|
+| 存储 | **MySQL** 全密文（可换 OceanBase/TiDB）| PRD 指定；后续 Raft/JRaft（HA）|
 | MCP | **MCP Java SDK**（server 暴露工具）| IF1 |
 | 组件通信 | gRPC / REST（内部 PDP/经纪）| — |
 | 构建 | **Maven**（多模块）或 Gradle | 见 §4 |
@@ -84,6 +85,13 @@ custos/
 | 容器/编排 | Docker + **Helm**（K8s）| 部署 |
 
 > 国密与 HA 的具体库版本在 PoC 中锁定（BouncyCastle GM 版本、JRaft 版本、Nacos 3.x 版本、Spring 三件套版本对照）。
+
+### ADR-8 · 持久化框架：Jimmer（而非裸 JDBC / JPA）
+
+- **决策**：Custos **自身元数据表**（`custos_storage`/`seal_config`/`lease`/`audit`/`dyn_role`）用 **Jimmer**（不可变实体 + `JavaRepository` + 类型安全 DSL）持久化；**裸 JDBC 仅保留在两类非 ORM 场景**：① 目标库的 DDL/账号管理（动态凭证 `CREATE/DROP USER`、`GRANT`）；② 经纪层对目标库的 **secretless 任意 SELECT** 执行。
+- **理由**：① 无 N+1、强类型 DSL，减少手写 SQL 与拼接注入面；② 不可变实体支持"残缺对象保存"，契合按版本写 keyring / 部分更新 lease；③ Spring Boot Starter 与 Custos 的 Java/Spring 栈天然一致；④ Apache-2.0 + 国内活跃，契合自主可控；⑤ DTO/OpenAPI/TS 生成利好未来控制台/SDK。
+- **加密边界**：实体的 `byte[]` 列存 **Barrier 密文**，加解密在 service 层完成，**Jimmer 不接触明文密钥**——不破坏"落盘前加密"红线。
+- **代价/注意**：Jimmer 是**编译时框架（APT/KSP）**，CI/IDE 需启用注解处理；团队需了解其不可变实体/Fetcher/DTO 理念。详见 `../research/jimmer.md`。
 
 ---
 
@@ -115,6 +123,7 @@ flowchart LR
 | BouncyCastle | MIT 风格 | ◐ 中（国际，审计充分）| 密码学（标准+国密）|
 | Tongsuo（铜锁）| Apache-2.0（国产/openAtom）| ✅ 高 | 国密合规增强（可选）|
 | Spring Boot/Cloud | Apache-2.0 | ◐ 中（国际，事实标准）| 框架 |
+| Jimmer | Apache-2.0（国内作者，活跃）| ✅ 高 | 持久化 ORM（自身元数据表）|
 | MySQL | GPL/商业（连接器 driver 许可注意）| ◐ 中 | 存储（可换国产兼容库如 OceanBase/TiDB）|
 | MCP Java SDK | 开源（核对许可）| ◐ | MCP 接入 |
 
