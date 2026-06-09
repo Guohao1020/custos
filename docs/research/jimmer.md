@@ -67,6 +67,24 @@ public interface ArrayModel {
 ### 2.6 注意：编译时框架
 - 依赖 **APT（Java）/ KSP（Kotlin）**；改实体/Controller 后需触发一次编译生成代码（IDE Run 即可）；仅改 `.dto` 时需 DTO 插件或全量编译。团队需了解 APT 工作方式。
 
+### 2.7 保存语义与 SaveMode（持久化代码的关键约束，源码 `SaveOperations`/save-mode 文档）
+`save(entity)` 默认 **UPSERT**；聚合根保存由 `SaveMode` 控制 5 种模式：
+
+| SaveMode | 行为 | 快捷方法 |
+|---|---|---|
+| **UPSERT**（默认）| 按 @Id 或 @Key 判存在 → INSERT 或 UPDATE | `save(e)` |
+| **INSERT_ONLY** | 无条件 INSERT | `insert(e)` |
+| **UPDATE_ONLY** | 无条件 UPDATE（按 id 或 key）| `update(e)` |
+| **INSERT_IF_ABSENT** | 存在则忽略，否则插入 | `insertIfAbsent(e)` |
+| **NON_IDEMPOTENT_UPSERT** | wild 对象=insert，否则 upsert（不推荐）| — |
+
+**三条必须记住的硬规则**（直接决定持久化代码正确性）：
+1. **既无 @Id 也无 @Key 的对象用默认 UPSERT 会直接报错**（"entity with neither id nor key cannot be accepted"）。→ 自增主键、未设 id、无 @Key 的实体（如**审计行**）**必须显式 `INSERT_ONLY`**。
+2. **残缺对象更新**：`UPDATE_ONLY` 只更新被设置（loaded）的列（`update T set <仅所设列> where id=?`），契合"只改部分字段"；但用 UPSERT 做**部分更新**在 MySQL 上因 `insert ... on duplicate key` 要求 NOT NULL 列有值而不可靠 → **部分更新（如续约只改 expire_at）应显式 `UPDATE_ONLY`**。
+3. **MySQL upsert**：按 @Key upsert 依赖唯一约束，需 `@KeyUniqueConstraint(noMoreUniqueConstraints = true)`；按 **@Id**（主键）upsert 则直接 `insert ... on duplicate key update`，无需额外注解。
+
+API 入口（源码核准）：`getEntities().save(e)` / `getEntities().saveCommand(e).setMode(SaveMode.X).execute()`；查询 `getEntities().findById(Class,id)`；删除 `getEntities().delete(Class,id)`（注意是 `delete` 不是 `deleteById`）；DSL `createQuery(Table.$).where(t.x().eq(..)/.like(..)/.lt(..)).orderBy(t.x().asc()).select(..).execute()`。
+
 ---
 
 ## 3. 对 Custos 的适配与边界（关键）
@@ -82,6 +100,15 @@ Custos 持久化分两类，**Jimmer 只接管第一类**：
 **加密边界保持清晰**：Jimmer 实体的 `svalue/wrapped_*` 属性是 `byte[]`，**进库前已被 Barrier 加密、出库后由 service 解密**；Jimmer 完全不碰明文密钥。→ 既享 ORM 便利，又不破坏「落盘前加密」红线。
 
 **APT 对引擎模块的影响**：engine 模块引入 `jimmer-apt`（编译时），运行时依赖 `jimmer-sql`/starter。属可接受的成熟依赖。
+
+**Custos 各表的 SaveMode 映射**（依 §2.7 硬规则，已落实到实现计划 2/5）：
+
+| 表 / 操作 | @Id | SaveMode | 原因 |
+|---|---|---|---|
+| `custos_storage` put / `custos_seal_config` put | String 主键（显式设）| **UPSERT**（默认 `save`）| 全列均设，按 @Id 走 `insert...on duplicate key update` |
+| `custos_audit` append | 自增 seq（不设）| **INSERT_ONLY** | 无 id/key，UPSERT 会报错；审计本就只追加 |
+| `custos_lease` register | lease_id（显式设）| **INSERT_ONLY** | 新行、避免多余存在性查询 |
+| `custos_lease` renew / revoke | lease_id（显式设）| **UPDATE_ONLY** | 残缺对象只改 `expire_at` / `revoked`，不触发 NOT NULL 列的插入路径 |
 
 ---
 

@@ -319,7 +319,7 @@ public final class JimmerStorage implements Storage {
 
     @Override
     public void delete(String key) {
-        sql.getEntities().deleteById(StorageEntry.class, key);
+        sql.getEntities().delete(StorageEntry.class, key);   // Entities.delete(Class,id)
     }
 
     @Override
@@ -658,6 +658,7 @@ package io.custos.engine.audit;
 
 import io.custos.engine.crypto.CipherSuite;
 import org.babyfish.jimmer.sql.JSqlClient;
+import org.babyfish.jimmer.sql.ast.mutation.SaveMode;
 
 import java.nio.charset.StandardCharsets;
 import java.util.HexFormat;
@@ -684,7 +685,8 @@ public final class HashChainAuditLog implements AuditLog {
         String sensitiveHmac = hex(suite.hmac(auditKey, nz(r.sensitiveRaw()).getBytes(StandardCharsets.UTF_8)));
         String canonical = canonical(r.ts(), r.actor(), r.task(), r.resource(), r.action(), r.decision(), r.resultDigest(), sensitiveHmac);
         String chain = hex(suite.hash((prev + "|" + canonical).getBytes(StandardCharsets.UTF_8)));
-        sql.getEntities().save(
+        // 审计行无 @Id(自增)/@Key → 必须 INSERT_ONLY（默认 UPSERT 会报 "neither id nor key"）
+        sql.getEntities().saveCommand(
                 AuditRowDraft.$.produce(d -> {
                     d.setTs(r.ts());
                     d.setActor(r.actor());
@@ -696,9 +698,9 @@ public final class HashChainAuditLog implements AuditLog {
                     d.setSensitiveHmac(sensitiveHmac);
                     d.setPrevHash(prev);
                     d.setChainHash(chain);
-                    // seq 不设置 → INSERT，DB 自增
+                    // seq 不设置 → DB 自增
                 })
-        );
+        ).setMode(SaveMode.INSERT_ONLY).execute();
     }
 
     @Override
@@ -896,6 +898,7 @@ public interface LeaseManager {
 package io.custos.engine.lease;
 
 import org.babyfish.jimmer.sql.JSqlClient;
+import org.babyfish.jimmer.sql.ast.mutation.SaveMode;
 
 import java.time.Duration;
 import java.util.List;
@@ -922,13 +925,13 @@ public final class DefaultLeaseManager implements LeaseManager {
         String id = resourcePath + "/" + UUID.randomUUID();
         long now = System.currentTimeMillis();
         long expire = now + ttl.toMillis();
-        sql.getEntities().save(LeaseRowDraft.$.produce(d -> {
+        sql.getEntities().saveCommand(LeaseRowDraft.$.produce(d -> {
             d.setLeaseId(id);
             d.setResourcePath(resourcePath);
             d.setIssuedAt(now);
             d.setExpireAt(expire);
             d.setRevoked(false);
-        }));
+        })).setMode(SaveMode.INSERT_ONLY).execute();   // 新行
         revokers.put(id, revoker);
         return new Lease(id, resourcePath, now, expire);
     }
@@ -936,11 +939,11 @@ public final class DefaultLeaseManager implements LeaseManager {
     @Override
     public Lease renew(String leaseId, Duration increment) {
         long expire = System.currentTimeMillis() + increment.toMillis();
-        // 残缺对象保存：只更新 expire_at
-        sql.getEntities().save(LeaseRowDraft.$.produce(d -> {
+        // 残缺对象 + UPDATE_ONLY：只更新 expire_at（避免 UPSERT 的部分插入触发 NOT NULL）
+        sql.getEntities().saveCommand(LeaseRowDraft.$.produce(d -> {
             d.setLeaseId(leaseId);
             d.setExpireAt(expire);
-        }));
+        })).setMode(SaveMode.UPDATE_ONLY).execute();
         LeaseRow row = sql.getEntities().findById(LeaseRow.class, leaseId);
         return new Lease(leaseId, row.resourcePath(), row.issuedAt(), row.expireAt());
     }
@@ -951,10 +954,10 @@ public final class DefaultLeaseManager implements LeaseManager {
         if (row == null) return;
         Revoker r = revokers.remove(leaseId);
         if (r != null) r.revoke(new Lease(leaseId, row.resourcePath(), row.issuedAt(), row.expireAt()));
-        sql.getEntities().save(LeaseRowDraft.$.produce(d -> {
+        sql.getEntities().saveCommand(LeaseRowDraft.$.produce(d -> {
             d.setLeaseId(leaseId);
             d.setRevoked(true);
-        }));
+        })).setMode(SaveMode.UPDATE_ONLY).execute();
     }
 
     @Override
@@ -1180,7 +1183,8 @@ git commit -m "feat(engine): dynamic MySQL read-only credentials (raw JDBC user 
 - **ADR-8 落地**：自身元数据表（storage/seal_config/audit/lease）全部 **Jimmer 实体 + JSqlClient**；**裸 JDBC 仅用于** Task 5 的 `CREATE/DROP USER`（账号 DDL）。加密边界：`StorageEntry.value`/`SealConfigEntry.value` 存 Barrier 密文，加解密在 `JimmerStorage`/service 层，Jimmer 不接触明文（Task 1 断言密文）。
 - **类型一致性**：`Storage`、`SealStore`（计划 1）、`AuditLog`/`AuditRecord`/`VerifyResult`、`LeaseManager`/`Lease`/`Revoker`、`DynamicDbCredentials`/`IssuedCred` 接口与计划 1/3/5 一致；Jimmer 生成类 `XxxDraft`/`XxxTable` 由 jimmer-apt 编译时产生。
 - **占位扫描**：无 TODO/TBD。两处注释说明（残缺对象保存语义、Jimmer 生成类）属机制解释，非缺失。
-- **Jimmer API 准确性**：`JSqlClient.newBuilder().setConnectionManager(ConnectionManager.simpleConnectionManager(ds)).setDialect(new MySqlDialect())`、`getEntities().save/findById/deleteById`、`createQuery(Table.$).where(...).select(...).execute()`、`XxxDraft.$.produce(...)` 均据 Jimmer 0.10.10 源码核准；列名用 `@Column` 避开 KEY/VALUE 保留字。
+- **Jimmer API 准确性**（据 Jimmer 0.10.10 源码 `SaveOperations`/`Entities` + save-mode 文档核准）：`JSqlClient.newBuilder().setConnectionManager(ConnectionManager.simpleConnectionManager(ds)).setDialect(new MySqlDialect())`；`getEntities().findById(Class,id)` / `delete(Class,id)`（**非 `deleteById`**）/ `save(e)`（默认 UPSERT）/ `saveCommand(e).setMode(SaveMode.X).execute()`；`createQuery(Table.$).where(...).select(...).execute()`、`XxxDraft.$.produce(...)`；列名用 `@Column` 避开 KEY/VALUE 保留字。
+- **SaveMode 正确性（深度学习后修正的真实 bug）**：① 审计行无 @Id(自增)/@Key → **INSERT_ONLY**（默认 UPSERT 会抛 "neither id nor key"）；② lease 续约/吊销为残缺对象部分更新 → **UPDATE_ONLY**（避免 UPSERT 的 `insert...on duplicate key` 触发 NOT NULL）；③ storage/seal put 全列已设、按 @Id → UPSERT(`save`) 正确。详见 `docs/research/jimmer.md` §2.7。
 - **可独立交付**：本计划 + 计划 1 = 可单测/集成测试的完整引擎（Jimmer 持久化 + 加密/解封/审计/租约/动态凭证）。
 
 > **下一计划**：3/5 身份层（JWT）——不变（不依赖持久化）。
