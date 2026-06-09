@@ -1,15 +1,21 @@
+server:
+  port: 8080
 custos:
   engine:
-    storage: { type: mysql, url: jdbc:mysql://mysql:3306/custos, username: custos, password-ref: env:CUSTOS_DB_PWD }
-    seal:    { type: shamir, shares: 5, threshold: 3 }
-    cipher-suite: intl
+    storage-url: jdbc:mysql://mysql:3306/custos
+    storage-username: custos
+    storage-password: ${CUSTOS_DB_PWD:custos}
+    shares: 5
+    threshold: 3
   nacos:
-    server-addr: nacos:8848
+    server-addr: ${NACOS_ADDR:}
     namespace: public
     policy-data-id: custos-policy
+    group: DEFAULT_GROUP
   identity:
-    token-ttl: 15m
     issuer: custos
   broker:
     db-readonly-schema: appdb
-    cred-ttl: 1h
+    target-jdbc-url: jdbc:mysql://mysql:3306/appdb
+  transport:
+    mcp-stdio: false

@@ -20,4 +20,6 @@ services:
     environment:
       CUSTOS_DB_PWD: custospwd
       NACOS_ADDR: nacos:8848
+      CUSTOS_ADMIN_TOKEN: demo-token
+    ports: ["8080:8080"]
     depends_on: [mysql, nacos]
