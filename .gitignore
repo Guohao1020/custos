@@ -6,3 +6,9 @@
 custos-design-docs.zip
 custos-design.html
 .preview-*.png
+
+# Java / Maven 构建产物
+target/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
