@@ -54,6 +54,13 @@
       <artifactId>jimmer-sql</artifactId>
       <version>0.10.10</version>
     </dependency>
+    <!-- 实测必需：jimmer-apt 生成的 XxxDraft 引用 Jackson 注解，而 jimmer-sql 把 jackson 设为 optional，
+         不显式引入则 APT 生成代码编译期报 “package com.fasterxml.jackson.annotation does not exist”。 -->
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+      <version>2.17.2</version>
+    </dependency>
     <dependency>
       <groupId>com.mysql</groupId>
       <artifactId>mysql-connector-j</artifactId>
@@ -71,8 +78,22 @@
       <version>1.19.8</version>
       <scope>test</scope>
     </dependency>
+    <!-- 测试日志绑定：强制 slf4j-api 2.x 与 slf4j-simple 2.x 对齐。jimmer 传递的 slf4j-api 1.7.36
+         会让 2.x 的 simple 绑定失败而退化为 NOP，导致 Testcontainers 的诊断日志（含连接失败原因）全部消失。 -->
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+      <version>2.0.16</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-simple</artifactId>
+      <version>2.0.16</version>
+      <scope>test</scope>
+    </dependency>
 ```
-并在 `engine/pom.xml` 加 `<build>`（启用 jimmer-apt 注解处理器）：
+并在 `engine/pom.xml` 加 `<build>`（jimmer-apt 注解处理器 + failsafe 跑 IT + 钉死 Docker API 版本）：
 ```xml
   <build>
     <plugins>
@@ -90,9 +111,36 @@
           </annotationProcessorPaths>
         </configuration>
       </plugin>
+      <!--
+        api.version=1.40（关键，实测坑）：Testcontainers 1.19.8 自带 docker-java 3.3.6，默认协商的
+        Docker API 版本低于 1.40；当本机/CI 的 Docker Engine 较新（如 29.x，MinAPIVersion=1.40）时，
+        引擎对低版本请求直接回 HTTP 400，Testcontainers 报 “Could not find a valid Docker environment”。
+        把系统属性 api.version 钉到 1.40（所有受支持引擎都接受的下限）即可，对新旧引擎与 CI 均安全。
+        docker-java 读系统属性 `api.version` / 环境变量 `DOCKER_API_VERSION`；.testcontainers.properties
+        里的 api.version 键不会透传给 docker-java，必须走 systemPropertyVariables。
+      -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <systemPropertyVariables><api.version>1.40</api.version></systemPropertyVariables>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <configuration>
+          <systemPropertyVariables><api.version>1.40</api.version></systemPropertyVariables>
+        </configuration>
+        <executions>
+          <execution><goals><goal>integration-test</goal><goal>verify</goal></goals></execution>
+        </executions>
+      </plugin>
     </plugins>
   </build>
 ```
+> failsafe 版本由父 `pom.xml` 的 `pluginManagement` 统一管理（3.2.5，与 surefire 对齐）。
+> **本地前置（仅本机一次性）**：`~/.testcontainers.properties` 里设 `docker.host`（本机用 `tcp://127.0.0.1:2375`，需在 Docker Desktop 勾选 “Expose daemon on tcp without TLS”；Linux/CI 自动探测 unix socket 无需配）。docker.host 属机器级配置，不入库。
 
 - [ ] **Step 2: 建表 DDL（列名避开 SQL 保留字 KEY/VALUE）**
 
@@ -1166,8 +1214,9 @@ Expected: PASS（2 个用例）。
 
 - [ ] **Step 5: 运行全部 engine 测试，确认无回归**
 
-Run: `mvn -q -pl engine test`
-Expected: 计划 1（crypto/barrier/shamir/seal）+ 计划 2（storage/sealstore/audit/lease/creds）全部 PASS。
+Run: `mvn -B -pl engine verify`
+Expected: 计划 1（crypto/barrier/shamir/seal，surefire 单测）+ 计划 2（storage/sealstore/audit/lease/creds，failsafe `*IT`）全部 PASS。
+> 注意：`mvn test` 默认**不**拾取 `*IT`（surefire 的默认 include 不含 IT），必须用 `verify` 触发 failsafe；单个 IT 调试可用 `mvn -pl engine test -Dtest=XxxIT`（按类名强制 surefire 跑）。
 
 - [ ] **Step 6: 提交**
 ```bash
