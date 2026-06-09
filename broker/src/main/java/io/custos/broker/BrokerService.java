@@ -3,8 +3,8 @@ package io.custos.broker;
 import io.custos.authz.Decision;
 import io.custos.authz.DecisionRequest;
 import io.custos.authz.Pdp;
-import io.custos.engine.secrets.DynamicDbCredentials;
 import io.custos.engine.secrets.IssuedCred;
+import io.custos.engine.secrets.SecretsEngine;
 import io.custos.identity.AgentId;
 import io.custos.identity.TokenClaims;
 import io.custos.identity.TokenService;
@@ -21,11 +21,11 @@ public final class BrokerService {
 
     private final TokenService tokens;
     private final Pdp pdp;
-    private final DynamicDbCredentials creds;
+    private final SecretsEngine creds;
     private final SecretlessQueryExecutor executor;
     private final String jdbcUrl;
 
-    public BrokerService(TokenService tokens, Pdp pdp, DynamicDbCredentials creds,
+    public BrokerService(TokenService tokens, Pdp pdp, SecretsEngine creds,
                          SecretlessQueryExecutor executor, String jdbcUrl) {
         this.tokens = tokens;
         this.pdp = pdp;
@@ -41,7 +41,7 @@ public final class BrokerService {
         if (!d.allowed()) {
             return QueryResult.denied(d.reason());
         }
-        IssuedCred cred = creds.issueReadonly(intent.schema(), Duration.ofHours(1));
+        IssuedCred cred = creds.issue(intent.schema(), Duration.ofHours(1));
         try {
             List<Map<String, Object>> rows = executor.runReadonly(jdbcUrl, cred, intent.sql());
             return QueryResult.ok(rows);

@@ -13,7 +13,7 @@ import java.util.HexFormat;
  * 动态 DB 只读凭证：现场 CREATE USER + GRANT SELECT（裸 JDBC，因 ORM 不做账号 DDL），
  * 登记 Jimmer 租约；撤销时 DROP USER。用户名/密码用十六进制（仅 [0-9a-f]）避免标识符注入。
  */
-public final class DynamicDbCredentials {
+public final class DynamicDbCredentials implements SecretsEngine {
 
     private final Connection admin;
     private final LeaseManager leases;
@@ -25,6 +25,12 @@ public final class DynamicDbCredentials {
         this.leases = leases;
         this.jdbcUrl = jdbcUrl;
     }
+
+    @Override
+    public String type() { return "db-readonly"; }
+
+    @Override
+    public IssuedCred issue(String path, Duration ttl) { return issueReadonly(path, ttl); }
 
     public IssuedCred issueReadonly(String schema, Duration ttl) {
         String user = "v_ro_" + randomHex(6);
