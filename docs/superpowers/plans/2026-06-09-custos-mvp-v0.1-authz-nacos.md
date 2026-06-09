@@ -227,7 +227,7 @@ public final class CasbinPdp implements Pdp {
     public Decision decide(DecisionRequest req) {
         Enforcer e = enforcerRef.get();
         EnforceResult res = e.enforceEx(req.sub(), req.obj(), req.act());
-        boolean allow = res.getResult();
+        boolean allow = res.isAllow();          // jcasbin 1.55.0: EnforceResult.isAllow()（非 getResult）
         List<String> matched = res.getExplain();
         String reason = allow
                 ? "命中允许策略: " + matched

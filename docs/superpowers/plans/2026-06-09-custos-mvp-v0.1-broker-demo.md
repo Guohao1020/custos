@@ -62,8 +62,13 @@
     <dependency><groupId>io.custos</groupId><artifactId>custos-authz</artifactId><version>0.1.0-SNAPSHOT</version></dependency>
     <dependency>
       <groupId>io.modelcontextprotocol.sdk</groupId>
-      <artifactId>mcp</artifactId>
-      <version>0.10.0</version>
+      <artifactId>mcp-core</artifactId>
+      <version>2.0.0</version>
+    </dependency>
+    <dependency>
+      <groupId>io.modelcontextprotocol.sdk</groupId>
+      <artifactId>mcp-json-jackson2</artifactId>
+      <version>2.0.0</version>
     </dependency>
     <dependency><groupId>com.mysql</groupId><artifactId>mysql-connector-j</artifactId><version>8.4.0</version></dependency>
     <dependency><groupId>org.testcontainers</groupId><artifactId>mysql</artifactId><version>1.19.8</version><scope>test</scope></dependency>
@@ -415,8 +420,9 @@ git commit -m "feat(broker): PEP orchestration (verify->decide->issue->execute->
 ```java
 package io.custos.broker;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import io.modelcontextprotocol.json.jackson2.JacksonMcpJsonMapper;
 import io.modelcontextprotocol.server.McpServer;
-import io.modelcontextprotocol.server.McpServerFeatures;
 import io.modelcontextprotocol.server.McpSyncServer;
 import io.modelcontextprotocol.server.transport.StdioServerTransportProvider;
 import io.modelcontextprotocol.spec.McpSchema;
@@ -425,9 +431,9 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 以 MCP server 暴露 query_db 工具。工具入参：tool/schema/sql 与用户令牌；
+ * 以 MCP server 暴露 query_db 工具（MCP Java SDK 2.0 API，源码核准 0.10.x→2.0 后重写）：
+ * McpServer.sync(transport).serverInfo(...).toolCall(tool, (exchange, request) -> CallToolResult).build()。
  * handler 调 BrokerService，只回结果文本（绝不回凭证）。
- * 注：MCP Java SDK 0.10.x 的 builder API；如版本不同，按该版本的 sync server/tool 注册方式微调（handler 逻辑不变）。
  */
 public final class McpQueryToolServer {
 
@@ -438,27 +444,36 @@ public final class McpQueryToolServer {
     }
 
     public McpSyncServer start() {
-        var tool = new McpSchema.Tool(
-                "query_db",
-                "对受治理只读库执行 SELECT，返回结果（凭证不出库）",
-                """
-                {"type":"object","properties":{
-                   "tool":{"type":"string"},"schema":{"type":"string"},
-                   "sql":{"type":"string"},"userToken":{"type":"string"}},
-                 "required":["tool","schema","sql","userToken"]}
-                """);
+        // 2.0：Tool.builder(name, Map 形式的输入 JSON Schema)
+        Map<String, Object> inputSchema = Map.of(
+                "type", "object",
+                "properties", Map.of(
+                        "tool", Map.of("type", "string"),
+                        "schema", Map.of("type", "string"),
+                        "sql", Map.of("type", "string"),
+                        "userToken", Map.of("type", "string")),
+                "required", List.of("tool", "schema", "sql", "userToken"));
 
-        var spec = new McpServerFeatures.SyncToolSpecification(tool, (exchange, args) -> {
-            QueryResult r = broker.queryDb(
-                    new QueryIntent((String) args.get("tool"), (String) args.get("schema"), (String) args.get("sql")),
-                    (String) args.get("userToken"));
-            String text = r.allowed() ? ("rows=" + r.rows()) : ("DENIED: " + r.denyReason());
-            return new McpSchema.CallToolResult(List.of(new McpSchema.TextContent(text)), !r.allowed());
-        });
+        McpSchema.Tool tool = McpSchema.Tool.builder("query_db", inputSchema)
+                .description("对受治理只读库执行 SELECT，返回结果（凭证不出库）")
+                .build();
 
-        return McpServer.sync(new StdioServerTransportProvider())
+        // 2.0：StdioServerTransportProvider 需注入 McpJsonMapper（这里用 jackson2 实现）
+        var transport = new StdioServerTransportProvider(new JacksonMcpJsonMapper(new ObjectMapper()));
+
+        return McpServer.sync(transport)
                 .serverInfo("custos-broker", "0.1.0")
-                .tools(spec)
+                .toolCall(tool, (exchange, request) -> {
+                    Map<String, Object> args = request.arguments();
+                    QueryResult r = broker.queryDb(
+                            new QueryIntent((String) args.get("tool"), (String) args.get("schema"), (String) args.get("sql")),
+                            (String) args.get("userToken"));
+                    String text = r.allowed() ? ("rows=" + r.rows()) : ("DENIED: " + r.denyReason());
+                    return McpSchema.CallToolResult.builder()
+                            .content(List.of(McpSchema.TextContent.builder(text).build()))
+                            .isError(!r.allowed())
+                            .build();
+                })
                 .build();
     }
 }
@@ -679,7 +694,7 @@ git commit -m "docs(examples): end-to-end demo runbook mapped to AC1-AC8"
 
 - **Spec 覆盖**：secretless 执行（§3.9、§4 secretless）→ Task 1；编排 verify→decide→issue→execute→audit（§3.9、详设 01 §4）→ Task 2；MCP 暴露（§3.9 IF1）→ Task 3；docker-compose + AC1–AC8（§9、详设 07）→ Task 3/4。
 - **类型一致性**：`QueryIntent(tool,schema,sql)`、`QueryResult.ok/denied`、`SecretlessQueryExecutor.runReadonly`、`BrokerService.queryDb`、`IssuedCred`（计划 2）、`Decision/DecisionRequest/Pdp`（计划 4）、`TokenService/TokenClaims/AgentId`（计划 3）跨计划一致。
-- **占位扫描**：无 TODO/TBD。两处明确标注的"按版本微调"：MCP Java SDK builder API、CLI 子命令名——均给出完整 handler/语义，属库版本适配而非内容缺失。
+- **占位扫描**：无 TODO/TBD。MCP Java SDK 已**源码核准并按 2.0 重写**（`mcp-core`+`mcp-json-jackson2` 2.0.0、`sync(transport).serverInfo().toolCall(tool, (exchange,request)->CallToolResult).build()`、`Tool.builder(name,Map)`、`CallToolResult.builder().content(...).isError(...).build()`、`StdioServerTransportProvider(new JacksonMcpJsonMapper(new ObjectMapper()))`）；仅 CLI 子命令名为约定式占位。
 - **secretless 红线**：Task 2 显式断言返回结果不含 `v_ro_`/`password`；Task 1 拒绝非 SELECT 与多语句。AC4 在 runbook 抓包验证。
 - **范围**：审计在 BrokerService 留钩子、在 app 装配注入（避免 broker 单测耦合 DB 审计表）；完整审计链在 demo 的 AC7 验证。
 - **可独立交付**：本计划串起前 4 计划，产出可演示的端到端 MVP；AC1–AC8 有明确验证步骤。
