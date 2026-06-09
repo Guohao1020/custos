@@ -9,4 +9,7 @@ public interface TokenService {
 
     /** 校验签名/过期/黑名单，返回声明；失败抛 {@link TokenException}。 */
     TokenClaims verify(String jwt);
+
+    /** OBO 委托签发：sub=userSubject、act=actorAgent、scope=给定（已算好的交集）。失败抛 {@link TokenException}。 */
+    ScopedToken issueOnBehalf(String userSubject, String actorAgent, Set<String> scopes, String audience, Duration ttl);
 }

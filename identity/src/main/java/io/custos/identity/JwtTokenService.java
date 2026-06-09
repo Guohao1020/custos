@@ -42,6 +42,23 @@ public final class JwtTokenService implements TokenService {
     }
 
     @Override
+    public ScopedToken issueOnBehalf(String userSubject, String actorAgent, Set<String> scopes, String audience, Duration ttl) {
+        Instant now = Instant.now();
+        Instant exp = now.plus(ttl);
+        String jwt = Jwts.builder()
+                .issuer(issuer)
+                .subject(userSubject)
+                .audience().add(audience).and()
+                .claim("scope", String.join(" ", scopes))
+                .claim("act", actorAgent)
+                .issuedAt(Date.from(now))
+                .expiration(Date.from(exp))
+                .signWith(signingKey.getPrivate(), Jwts.SIG.ES256)
+                .compact();
+        return new ScopedToken(jwt, exp);
+    }
+
+    @Override
     public TokenClaims verify(String jwt) {
         try {
             Claims c = Jwts.parser()
