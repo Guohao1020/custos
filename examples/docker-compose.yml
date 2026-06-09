@@ -1,0 +1,23 @@
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpwd
+      MYSQL_DATABASE: custos
+      MYSQL_USER: custos
+      MYSQL_PASSWORD: custospwd
+    ports: ["3306:3306"]
+    volumes:
+      - ./init:/docker-entrypoint-initdb.d:ro
+  nacos:
+    image: nacos/nacos-server:v2.3.2
+    environment:
+      MODE: standalone
+    ports: ["8848:8848", "9848:9848"]
+    depends_on: [mysql]
+  custos:
+    build: ..
+    environment:
+      CUSTOS_DB_PWD: custospwd
+      NACOS_ADDR: nacos:8848
+    depends_on: [mysql, nacos]

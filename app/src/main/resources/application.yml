@@ -1,0 +1,15 @@
+custos:
+  engine:
+    storage: { type: mysql, url: jdbc:mysql://mysql:3306/custos, username: custos, password-ref: env:CUSTOS_DB_PWD }
+    seal:    { type: shamir, shares: 5, threshold: 3 }
+    cipher-suite: intl
+  nacos:
+    server-addr: nacos:8848
+    namespace: public
+    policy-data-id: custos-policy
+  identity:
+    token-ttl: 15m
+    issuer: custos
+  broker:
+    db-readonly-schema: appdb
+    cred-ttl: 1h
