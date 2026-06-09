@@ -71,7 +71,7 @@ class HostEndToEndIT {
         assertFalse(op.unseal(shares.get(2)).sealed());
 
         // 写策略（允许 claude-prod 只读）
-        policy.put("p, role:reader, tool:db/*, read, allow\ng, agent:claude-prod, role:reader\n");
+        policy.put("p, role:reader, default, tool:db/*, read, allow\ng, agent:claude-prod, role:reader, default\n");
 
         // 准：claude-prod 查询返回行，且 secretless
         String allowTok = tokens.issue(new AgentId("corp.example", "claude-prod", "s1"), Set.of("tool:db/query_orders"), "broker", Duration.ofMinutes(15)).jwt();

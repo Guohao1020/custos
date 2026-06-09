@@ -37,7 +37,7 @@ public final class BrokerService {
     public QueryResult queryDb(QueryIntent intent, String userToken) {
         TokenClaims claims = tokens.verify(userToken);                 // 失败抛 TokenException
         String sub = "agent:" + AgentId.parse(claims.subject()).agent();
-        Decision d = pdp.decide(new DecisionRequest(sub, "tool:" + intent.tool(), "read"));
+        Decision d = pdp.decide(DecisionRequest.of(sub, "tool:" + intent.tool(), "read"));
         if (!d.allowed()) {
             return QueryResult.denied(d.reason());
         }

@@ -55,8 +55,8 @@ class BrokerServiceIT {
     private BrokerService broker() {
         CasbinPdp pdp = new CasbinPdp();
         pdp.reload("""
-                p, role:reader, tool:db/*, read, allow
-                g, agent:claude-prod, role:reader
+                p, role:reader, default, tool:db/*, read, allow
+                g, agent:claude-prod, role:reader, default
                 """);
         // 租约表在 root 的默认库 test 中创建；LeaseManager 的 JSqlClient 也指向 test（root 可访问）。
         MysqlDataSource ds = new MysqlDataSource();

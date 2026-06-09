@@ -10,12 +10,12 @@ import static org.awaitility.Awaitility.await;
 class RevocationViaWatcherTest {
 
     private static final String ALLOW = """
-            p, role:reader, tool:db/*, read, allow
-            g, agent:claude-prod, role:reader
+            p, role:reader, default, tool:db/*, read, allow
+            g, agent:claude-prod, role:reader, default
             """;
     private static final String REVOKED = """
-            p, role:reader, tool:db/*, read, deny
-            g, agent:claude-prod, role:reader
+            p, role:reader, default, tool:db/*, read, deny
+            g, agent:claude-prod, role:reader, default
             """;
 
     @Test
@@ -27,7 +27,7 @@ class RevocationViaWatcherTest {
         PolicyWatcher watcher = new PolicyWatcher(cp, "custos-policy", pdp);
         watcher.start();   // 初次加载 + 订阅
 
-        DecisionRequest req = new DecisionRequest("agent:claude-prod", "tool:db/query_orders", "read");
+        DecisionRequest req = DecisionRequest.of("agent:claude-prod", "tool:db/query_orders", "read");
         assertTrue(pdp.decide(req).allowed(), "吊销前应放行");
 
         long t0 = System.currentTimeMillis();

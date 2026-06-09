@@ -12,15 +12,15 @@ public final class CasbinPdp implements Pdp {
 
     private static final String MODEL_TEXT = """
             [request_definition]
-            r = sub, obj, act
+            r = sub, dom, obj, act
             [policy_definition]
-            p = sub, obj, act, eft
+            p = sub, dom, obj, act, eft
             [role_definition]
-            g = _, _
+            g = _, _, _
             [policy_effect]
             e = some(where (p.eft == allow)) && !some(where (p.eft == deny))
             [matchers]
-            m = g(r.sub, p.sub) && keyMatch2(r.obj, p.obj) && (r.act == p.act || p.act == "*")
+            m = g(r.sub, p.sub, r.dom) && r.dom == p.dom && keyMatch2(r.obj, p.obj) && (r.act == p.act || p.act == "*")
             """;
 
     private final AtomicReference<Enforcer> enforcerRef = new AtomicReference<>(buildEnforcer(""));
@@ -28,13 +28,13 @@ public final class CasbinPdp implements Pdp {
     @Override
     public Decision decide(DecisionRequest req) {
         Enforcer e = enforcerRef.get();
-        EnforceResult res = e.enforceEx(req.sub(), req.obj(), req.act());
+        EnforceResult res = e.enforceEx(req.sub(), req.dom(), req.obj(), req.act());
         boolean allow = res.isAllow();          // jcasbin 1.55.0: EnforceResult.isAllow()（非 getResult）
         List<String> matched = res.getExplain();
         String reason = allow
                 ? "命中允许策略: " + matched
                 : "无匹配允许策略或命中拒绝策略（默认拒绝）: " + req;
-        return new Decision(allow, matched, reason);
+        return allow ? Decision.allow(matched, 0, reason) : Decision.deny(matched, 0, reason);
     }
 
     @Override

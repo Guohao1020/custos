@@ -33,9 +33,10 @@ custos --token $TOKEN operator status                          # {"sealed":false
 ## 2. 写策略到 Nacos（允许 claude-prod 只读）
 
 ```bash
-custos --token $TOKEN policy --content 'p, role:reader, tool:db/*, read, allow
-g, agent:claude-prod, role:reader'
+custos --token $TOKEN policy --content 'p, role:reader, default, tool:db/*, read, allow
+g, agent:claude-prod, role:reader, default'
 ```
+> 策略含 `dom` 列（=Nacos namespace，多租户隔离）；单租户演示用 `default`。
 
 ## 3. Agent 经 MCP / REST 查询（AC3/AC4/AC5）
 
@@ -57,8 +58,8 @@ curl -s -XPOST localhost:8080/query_db -H 'Content-Type: application/json' \
 
 ```bash
 # 改策略为拒绝，计时到下一次查询被拒
-time custos --token $TOKEN policy --content 'p, role:reader, tool:db/*, read, deny
-g, agent:claude-prod, role:reader'
+time custos --token $TOKEN policy --content 'p, role:reader, default, tool:db/*, read, deny
+g, agent:claude-prod, role:reader, default'
 # 立即重发 query_db → 期望 {"allowed":false,...}；记录从改策略到被拒的延迟（应 ≤ 数秒）
 ```
 
