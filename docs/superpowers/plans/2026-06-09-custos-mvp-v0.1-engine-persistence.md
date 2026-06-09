@@ -1093,6 +1093,12 @@ class DynamicDbCredentialsIT {
     private Connection admin;
     private DynamicDbCredentials creds;
 
+    /** 只读用户仅被授予 appdb，连接默认库须指向 appdb（保留 getJdbcUrl 的连接参数，仅替换库名段）。
+        否则连接默认库 test 会因 "Access denied to database 'test'" 失败。 */
+    private String appdbUrl() {
+        return MYSQL.getJdbcUrl().replaceFirst("/" + MYSQL.getDatabaseName() + "(\\?|$)", "/appdb$1");
+    }
+
     @BeforeEach
     void setUp() throws Exception {
         admin = DriverManager.getConnection(MYSQL.getJdbcUrl(), "root", "root");
@@ -1110,7 +1116,7 @@ class DynamicDbCredentialsIT {
     @Test
     void issuedCredReadsButCannotWrite() throws Exception {
         IssuedCred c = creds.issueReadonly("appdb", Duration.ofHours(1));
-        try (Connection user = DriverManager.getConnection(MYSQL.getJdbcUrl(), c.username(), c.password());
+        try (Connection user = DriverManager.getConnection(appdbUrl(), c.username(), c.password());
              Statement st = user.createStatement()) {
             assertTrue(st.executeQuery("SELECT COUNT(*) FROM appdb.orders").next());
             assertThrows(SQLException.class, () -> st.executeUpdate("INSERT INTO appdb.orders VALUES (2)"));
@@ -1122,7 +1128,7 @@ class DynamicDbCredentialsIT {
         IssuedCred c = creds.issueReadonly("appdb", Duration.ofHours(1));
         creds.revoke(c.leaseId());
         assertThrows(SQLException.class, () ->
-                DriverManager.getConnection(MYSQL.getJdbcUrl(), c.username(), c.password()));
+                DriverManager.getConnection(appdbUrl(), c.username(), c.password()));
     }
 }
 ```
