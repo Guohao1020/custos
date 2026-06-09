@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent>
+    <groupId>io.custos</groupId>
+    <artifactId>custos-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+  <artifactId>custos-broker</artifactId>
+  <dependencies>
+    <dependency><groupId>io.custos</groupId><artifactId>custos-engine</artifactId><version>0.1.0-SNAPSHOT</version></dependency>
+    <dependency><groupId>io.custos</groupId><artifactId>custos-identity</artifactId><version>0.1.0-SNAPSHOT</version></dependency>
+    <dependency><groupId>io.custos</groupId><artifactId>custos-authz</artifactId><version>0.1.0-SNAPSHOT</version></dependency>
+    <!-- MCP SDK 在 Task 3（McpQueryToolServer）再加，避免 T1/T2 被 RC 版本下载风险拖累。 -->
+    <dependency><groupId>com.mysql</groupId><artifactId>mysql-connector-j</artifactId><version>8.4.0</version></dependency>
+    <dependency><groupId>org.testcontainers</groupId><artifactId>mysql</artifactId><version>1.19.8</version><scope>test</scope></dependency>
+    <dependency><groupId>org.testcontainers</groupId><artifactId>junit-jupiter</artifactId><version>1.19.8</version><scope>test</scope></dependency>
+    <dependency><groupId>org.junit.jupiter</groupId><artifactId>junit-jupiter</artifactId><scope>test</scope></dependency>
+    <dependency><groupId>org.slf4j</groupId><artifactId>slf4j-api</artifactId><version>2.0.16</version><scope>test</scope></dependency>
+    <dependency><groupId>org.slf4j</groupId><artifactId>slf4j-simple</artifactId><version>2.0.16</version><scope>test</scope></dependency>
+  </dependencies>
+  <build>
+    <plugins>
+      <!-- 同 engine：Testcontainers 1.19.8 的 docker-java 3.3.6 默认 API 版本低于新引擎 MinAPIVersion，钉到 1.40。 -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <configuration>
+          <systemPropertyVariables><api.version>1.40</api.version></systemPropertyVariables>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <configuration>
+          <systemPropertyVariables><api.version>1.40</api.version></systemPropertyVariables>
+        </configuration>
+        <executions>
+          <execution><goals><goal>integration-test</goal><goal>verify</goal></goals></execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

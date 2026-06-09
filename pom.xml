@@ -11,6 +11,7 @@
     <module>engine</module>
     <module>identity</module>
     <module>authz</module>
+    <module>broker</module>
   </modules>
   <properties>
     <maven.compiler.release>21</maven.compiler.release>
