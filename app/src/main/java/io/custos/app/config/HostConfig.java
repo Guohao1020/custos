@@ -56,6 +56,11 @@ public class HostConfig {
     }
 
     @Bean
+    public io.custos.app.policy.PolicyService policyService(ControlPlane cp, CustosProperties props) {
+        return new io.custos.app.policy.PolicyService(cp, props);
+    }
+
+    @Bean
     public FilterRegistrationBean<AdminTokenFilter> adminTokenFilter() {
         FilterRegistrationBean<AdminTokenFilter> reg = new FilterRegistrationBean<>(new AdminTokenFilter(System.getenv("CUSTOS_ADMIN_TOKEN")));
         reg.addUrlPatterns("/operator/*", "/policy/*", "/audit/*");
