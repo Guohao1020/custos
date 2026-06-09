@@ -63,12 +63,15 @@
     <dependency>
       <groupId>io.modelcontextprotocol.sdk</groupId>
       <artifactId>mcp-core</artifactId>
-      <version>2.0.0</version>
+      <!-- 注：MCP Java SDK 稳定 GA 为 1.1.3；2.0 尚处 RC（Maven Central 最新=2.0.0-RC1）。
+           本计划用 2.0 新 API（已对照源码核准），故 pin RC1；GA 发布后改为 2.0.0。
+           若团队只用稳定 GA，可改 1.1.3——其 tool 注册 API 与 2.0 略有差异，需按 1.x 调整。 -->
+      <version>2.0.0-RC1</version>
     </dependency>
     <dependency>
       <groupId>io.modelcontextprotocol.sdk</groupId>
       <artifactId>mcp-json-jackson2</artifactId>
-      <version>2.0.0</version>
+      <version>2.0.0-RC1</version>
     </dependency>
     <dependency><groupId>com.mysql</groupId><artifactId>mysql-connector-j</artifactId><version>8.4.0</version></dependency>
     <dependency><groupId>org.testcontainers</groupId><artifactId>mysql</artifactId><version>1.19.8</version><scope>test</scope></dependency>
@@ -694,7 +697,8 @@ git commit -m "docs(examples): end-to-end demo runbook mapped to AC1-AC8"
 
 - **Spec 覆盖**：secretless 执行（§3.9、§4 secretless）→ Task 1；编排 verify→decide→issue→execute→audit（§3.9、详设 01 §4）→ Task 2；MCP 暴露（§3.9 IF1）→ Task 3；docker-compose + AC1–AC8（§9、详设 07）→ Task 3/4。
 - **类型一致性**：`QueryIntent(tool,schema,sql)`、`QueryResult.ok/denied`、`SecretlessQueryExecutor.runReadonly`、`BrokerService.queryDb`、`IssuedCred`（计划 2）、`Decision/DecisionRequest/Pdp`（计划 4）、`TokenService/TokenClaims/AgentId`（计划 3）跨计划一致。
-- **占位扫描**：无 TODO/TBD。MCP Java SDK 已**源码核准并按 2.0 重写**（`mcp-core`+`mcp-json-jackson2` 2.0.0、`sync(transport).serverInfo().toolCall(tool, (exchange,request)->CallToolResult).build()`、`Tool.builder(name,Map)`、`CallToolResult.builder().content(...).isError(...).build()`、`StdioServerTransportProvider(new JacksonMcpJsonMapper(new ObjectMapper()))`）；仅 CLI 子命令名为约定式占位。
+- **占位扫描**：无 TODO/TBD。MCP Java SDK 已**源码核准并按 2.0 重写**（`mcp-core`+`mcp-json-jackson2`、`sync(transport).serverInfo().toolCall(tool, (exchange,request)->CallToolResult).build()`、`Tool.builder(name,Map)`、`CallToolResult.builder().content(...).isError(...).build()`、`StdioServerTransportProvider(new JacksonMcpJsonMapper(new ObjectMapper()))`）；仅 CLI 子命令名为约定式占位。
+- **依赖版本（Maven Central 核验）**：jcasbin 1.55.0 / codahale-shamir 0.7.0 / jimmer-sql 0.10.10 / nacos-client 2.3.2 / jjwt 0.12.5 / spring-boot 3.3.2 / testcontainers 1.19.8 / mysql-connector-j 8.4.0 均已发布存在，且兼容 Java 21。**唯一例外**：MCP `mcp-core` 稳定 GA 为 **1.1.3**，2.0 尚处 **RC1**（无 2.0.0 GA）→ 本计划 pin `2.0.0-RC1`，GA 后改 `2.0.0`（详见上方 pom 注释）。Spring Boot 3.3 用 Jackson 2，故 MCP 选 `mcp-json-jackson2` 与之一致（非 jackson3）。
 - **secretless 红线**：Task 2 显式断言返回结果不含 `v_ro_`/`password`；Task 1 拒绝非 SELECT 与多语句。AC4 在 runbook 抓包验证。
 - **范围**：审计在 BrokerService 留钩子、在 app 装配注入（避免 broker 单测耦合 DB 审计表）；完整审计链在 demo 的 AC7 验证。
 - **可独立交付**：本计划串起前 4 计划，产出可演示的端到端 MVP；AC1–AC8 有明确验证步骤。
