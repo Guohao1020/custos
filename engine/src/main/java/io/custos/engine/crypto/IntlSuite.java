@@ -59,12 +59,22 @@ public class IntlSuite implements CipherSuite {
 
     @Override
     public byte[] hash(byte[] data) {
-        throw new UnsupportedOperationException("Task 3");
+        try {
+            return java.security.MessageDigest.getInstance("SHA-256").digest(data);
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     @Override
     public byte[] hmac(byte[] key, byte[] data) {
-        throw new UnsupportedOperationException("Task 3");
+        try {
+            javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(key, "HmacSHA256"));
+            return mac.doFinal(data);
+        } catch (java.security.GeneralSecurityException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     @Override
