@@ -79,16 +79,38 @@ public class IntlSuite implements CipherSuite {
 
     @Override
     public KeyPair genSignKey() {
-        throw new UnsupportedOperationException("Task 4");
+        try {
+            java.security.KeyPairGenerator g = java.security.KeyPairGenerator.getInstance("EC");
+            g.initialize(new java.security.spec.ECGenParameterSpec("secp256r1"));
+            return g.generateKeyPair();
+        } catch (java.security.GeneralSecurityException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     @Override
     public byte[] sign(PrivateKey key, byte[] data) {
-        throw new UnsupportedOperationException("Task 4");
+        try {
+            java.security.Signature s = java.security.Signature.getInstance("SHA256withECDSA");
+            s.initSign(key);
+            s.update(data);
+            return s.sign();
+        } catch (java.security.GeneralSecurityException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     @Override
     public boolean verify(PublicKey key, byte[] data, byte[] sig) {
-        throw new UnsupportedOperationException("Task 4");
+        try {
+            java.security.Signature s = java.security.Signature.getInstance("SHA256withECDSA");
+            s.initVerify(key);
+            s.update(data);
+            return s.verify(sig);
+        } catch (java.security.SignatureException | java.security.InvalidKeyException e) {
+            return false;
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException(e);
+        }
     }
 }
