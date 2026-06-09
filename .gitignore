@@ -1,5 +1,6 @@
 # 竞品源码仅本地精读，不纳入 Custos 仓库（许可风险 + 体积）
-research/
+# 注意：根锚定（前导 /），只忽略顶层 research/，不影响 docs/research/ 笔记
+/research/
 
 # 生成/打包产物（可由 tools/build_html.py 重生成）
 custos-design-docs.zip
