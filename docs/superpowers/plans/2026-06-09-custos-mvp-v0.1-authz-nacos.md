@@ -579,7 +579,7 @@ git commit -m "feat(authz): Nacos control-plane adapter with env-gated smoke tes
 
 - **Spec 覆盖**：jCasbin RBAC + 工具级 scope（§3.8）→ Task 1；默认拒绝 + deny 优先 → 模型 effect；可解释（命中策略 + 原因，详设 04 §4）→ `Decision` + enforceEx；Nacos Adapter/Watcher 秒级吊销（§5、详设 05 §2）→ Task 2（逻辑确定性单测）+ Task 3（真实 Nacos）。
 - **类型一致性**：`DecisionRequest(sub,obj,act)`、`Decision(allowed,matchedPolicies,reason)`、`Pdp.decide/reload`、`ControlPlane.publish/get/subscribe`、`PolicyWatcher.start` 跨任务一致；`NacosControlPlane` 与 `InMemoryControlPlane` 实现同一接口。
-- **占位扫描**：无 TODO/TBD。`enforceEx`/`EnforceResult.getResult()/getExplain()` 为 jcasbin 1.55.0 API；若小版本差异，按该版本 `EnforceResult` 字段名微调（已在注释标注语义）。
+- **占位扫描**：无 TODO/TBD。jCasbin API 已**源码核准**（1.55.0）：`new Enforcer(Model)`、`Model.loadModelFromText(text)`、`enforceEx(...) → EnforceResult.isAllow()/getExplain()`（**是 `isAllow()`，非 `getResult()`**）、`addNamedPolicy/addNamedGroupingPolicy(String ptype, String... rule)`。
 - **测试策略**：秒级吊销**逻辑**用内存控制面做确定性快测（不依赖容器）；真实 Nacos 推送在计划 5 compose 环境用环境门控 IT 验证——避免 Testcontainers 对 Nacos gRPC 端口映射的脆弱性。
 - **可独立交付**：authz 模块可单独编译/测试，产出可解释 PDP + 秒级热更新吊销。
 
