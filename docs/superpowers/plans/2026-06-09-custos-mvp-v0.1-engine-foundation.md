@@ -1076,10 +1076,9 @@ public final class DefaultSealManager implements SealManager {
         // master 切片（分片即 unseal key 的份额）
         Map<Integer, byte[]> parts = new ShamirSplitter(shares, threshold).split(master);
 
-        // 进入解封态（init 后即 unsealed）
-        this.keyring = new Keyring();
-        this.keyring.add(BARRIER_VERSION, barrierKey);
-        java.util.Arrays.fill(master, (byte) 0);   // 清零明文 master
+        // init 后保持 sealed：清零内存中的 master 与 barrier key（更安全），操作员需用分片解封
+        java.util.Arrays.fill(master, (byte) 0);
+        java.util.Arrays.fill(barrierKey, (byte) 0);
 
         // 分片序号前缀编码进字节，提交时还原
         List<byte[]> out = new ArrayList<>();
