@@ -39,7 +39,8 @@ public class HostConfig {
     public ControlPlane controlPlane(CustosProperties props) {
         String addr = props.getNacos().getServerAddr();
         if (addr == null || addr.isBlank()) return new InMemoryControlPlane();
-        return new NacosControlPlane(addr, props.getNacos().getNamespace(), props.getNacos().getGroup());
+        return new NacosControlPlane(addr, props.getNacos().getNamespace(), props.getNacos().getGroup(),
+                props.getNacos().getUsername(), props.getNacos().getPassword());
     }
 
     @Bean
@@ -63,7 +64,7 @@ public class HostConfig {
     @Bean
     public FilterRegistrationBean<AdminTokenFilter> adminTokenFilter() {
         FilterRegistrationBean<AdminTokenFilter> reg = new FilterRegistrationBean<>(new AdminTokenFilter(System.getenv("CUSTOS_ADMIN_TOKEN")));
-        reg.addUrlPatterns("/operator/*", "/policy/*", "/audit/*");
+        reg.addUrlPatterns("/operator/*", "/policy/*", "/audit/*", "/token/*");
         return reg;
     }
 }
