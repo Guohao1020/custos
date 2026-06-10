@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "custos": {
+      "command": "bash",
+      "args": ["D:/harvey_work/custos/examples/mcp-custos.sh"]
+    }
+  }
+}

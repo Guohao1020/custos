@@ -106,7 +106,27 @@ docker exec -it <mysql> mysql -uroot -prootpwd -e "SELECT HEX(svalue) FROM custo
 
 ## 7. 一键起（AC8）
 
-`docker compose up` 起 Nacos+MySQL+Custos，按上述脚本跑通即 AC8 通过。
+`docker compose up` 起 Nacos+MySQL+Custos（compose 项目名 `custos-demo`），按上述脚本跑通即 AC8 通过。
+
+## 8. 真实 Claude 经 MCP 调 custos（secretless 全链路）
+
+拓扑：Claude 作为 MCP client 拉起**第二个 custos host**（stdio 传输，与容器实例共享同一
+MySQL 存储与 Nacos 控制面）。[mcp-custos.sh](mcp-custos.sh) 负责：进程 sealed 启动 →
+后台用 `.e2e-shares.json` 的同一组 Shamir 分片经 REST(:8090) 解封 → 签发 agent 令牌写
+`.e2e-local-jwt.txt`（agent 只拿令牌，永远见不到 DB 凭证）。
+
+- **交互式（Claude Code / Claude Desktop）**：把 [claude-mcp.json](claude-mcp.json) 的
+  `mcpServers.custos` 合入 MCP 配置（CLI：`claude --mcp-config examples/claude-mcp.json`），
+  然后让 Claude 读取令牌文件并调用 `query_db`。
+- **无交互冒烟**：`python examples/mcp_smoke_client.py "SELECT id, amount FROM appdb.orders ORDER BY id"`
+  —— 完整走 initialize → tools/list → tools/call。
+
+实测输出（2026-06-10）：握手 `custos-broker 0.1.0` → `rows=[{id=1, amount=100}, …]`、
+`rows=[{total=600}]`；两次决策以 `agent:claude-prod allow` 追加到共享审计链，
+容器实例 `audit verify` 校验跨 host 链完整（`ok:true`）。
+
+> 注：MCP server 支持 sealed 启动（握手/tools-list 可用，工具调用返回 SEALED 提示），
+> 解封后无需重启即可服务；stdio 模式下 banner/控制台日志已关闭以保 JSON-RPC 通道纯净。
 
 ## 附：验证真实 Nacos 秒级推送（计划 4 的环境门控 IT）
 
