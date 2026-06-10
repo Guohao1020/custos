@@ -60,5 +60,10 @@ public final class RaftKvServer {
 
     public void shutdown() {
         groupService.shutdown();
+        try {
+            node.join();   // 等日志存储真正关闭再返回（Windows 下不等待会残留 LOCK 句柄，临时目录无法删除）
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 }
