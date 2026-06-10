@@ -8,9 +8,13 @@
 
 ```bash
 docker compose -f examples/docker-compose.yml up -d --build
-# 等 mysql/nacos/custos healthy；admin token = demo-token（见 compose）
+# 等 mysql/nacos healthy → nacos-init 一次性初始化管理员 → custos 起；admin token = demo-token（见 compose）
 export TOKEN=demo-token
 ```
+
+> **Nacos 3.2**：API 鉴权开启（custos 以 `nacos/DemoPass123` 连接）；控制台从 8848 分离到独立端口，
+> Web UI（含 **AI 管理中心**：MCP 注册中心 / Agent / Skill 管理）在 http://localhost:8081 ，
+> 登录账号 `nacos` / `DemoPass123`（由 `nacos-init` 服务经一次性 `POST /v3/auth/user/admin` 初始化）。
 
 CLI 构建：`mvn -pl cli -am -DskipTests package`，入口 `io.custos.cli.CustosCli`（或 `java -jar cli/target/custos-cli-*.jar`）。
 
@@ -40,17 +44,25 @@ g, agent:claude-prod, role:reader, default'
 
 ## 3. Agent 经 MCP / REST 查询（AC3/AC4/AC5）
 
+> 先取一枚 `userToken`：生产由 Agent 经身份注册 / OBO 委托获取；demo 用 admin-gated 的开发端点现签一枚
+> （由 host 私钥 ES256 签名，受 Bearer admin token 保护）：
+> ```bash
+> JWT=$(curl -s -XPOST localhost:8080/token/issue -H "Authorization: Bearer $TOKEN" \
+>   -H 'Content-Type: application/json' -d '{"agent":"claude-prod","scopes":["tool:db/query_orders"]}' \
+>   | python3 -c "import sys,json;print(json.load(sys.stdin)['jwt'])")
+> ```
+
 - **MCP**：MCP 客户端（Claude/Codex）以 stdio 启动 custos-broker（`custos.transport.mcp-stdio=true` 且已解封），调用
   `query_db { tool:"db/query_orders", schema:"appdb", sql:"SELECT COUNT(*) AS n FROM appdb.orders", userToken:"<JWT>" }`。
 - **REST**（等价，便于演示）：
 ```bash
 curl -s -XPOST localhost:8080/query_db -H 'Content-Type: application/json' \
-  -d '{"tool":"db/query_orders","schema":"appdb","sql":"SELECT COUNT(*) AS n FROM appdb.orders","userToken":"<JWT>"}'
-# 期望 {"allowed":true,"rows":[{"n":3}],...}
+  -d "{\"tool\":\"db/query_orders\",\"schema\":\"appdb\",\"sql\":\"SELECT COUNT(*) AS n FROM appdb.orders\",\"userToken\":\"$JWT\"}"
+# 期望 {"allowed":true,"rows":[{"n":3}],"denyReason":null}
 ```
 - **CLI**（等价）：
 ```bash
-custos query --tool db/query_orders --schema appdb --sql "SELECT COUNT(*) AS n FROM appdb.orders" --user-token <JWT>
+custos query --tool db/query_orders --schema appdb --sql "SELECT COUNT(*) AS n FROM appdb.orders" --user-token $JWT
 # 一键重新密封（admin）：custos --token $TOKEN operator seal
 ```
 
@@ -73,8 +85,11 @@ g, agent:claude-prod, role:reader, default'
 
 ## 5. 审计防篡改（AC7）
 
+> 每次 `query_db` 决策（allow/deny）都会写一条哈希链审计行（actor=agent、resource=tool，
+> 敏感原文/租约号经 HMAC 脱敏，绝不明文入库）；下面在已跑过若干查询后校验链。
+
 ```bash
-custos --token $TOKEN audit verify                 # {"ok":true,...}
+custos --token $TOKEN audit verify                 # {"ok":true,"brokenAtSeq":-1}
 # 手工改一条历史：UPDATE custos_audit SET action='write' WHERE seq=1;
 custos --token $TOKEN audit verify                 # {"ok":false,"brokenAtSeq":1}
 ```
@@ -98,7 +113,9 @@ docker exec -it <mysql> mysql -uroot -prootpwd -e "SELECT HEX(svalue) FROM custo
 stack 起来后，本地对着 compose 暴露的 Nacos 跑：
 
 ```bash
-NACOS_ADDR=127.0.0.1:8848 mvn -q -pl authz test -Dtest=NacosControlPlaneSmokeIT
+NACOS_ADDR=127.0.0.1:8848 NACOS_USERNAME=nacos NACOS_PASSWORD=DemoPass123 \
+  mvn -q -pl authz test -Dtest=NacosControlPlaneSmokeIT
 ```
 
-期望 PASS（publish→get→subscribe 收到秒级变更推送）。无 `NACOS_ADDR` 时该 IT 自动跳过。
+期望 PASS（publish→get→subscribe 收到秒级变更推送）。无 `NACOS_ADDR` 时该 IT 自动跳过；
+Nacos 3.x API 鉴权开启时必须带 `NACOS_USERNAME`/`NACOS_PASSWORD`。

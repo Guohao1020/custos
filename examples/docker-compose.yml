@@ -9,17 +9,53 @@ services:
     ports: ["3306:3306"]
     volumes:
       - ./init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-prootpwd"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Nacos 3.2：控制台（含 AI 管理中心/MCP 注册中心）从 8848 分离到独立 8080 端口 → 宿主 8081。
+  # 三个 NACOS_AUTH_* 必填（缺失则容器直接退出 255）；API 鉴权开启走完全生产姿态。
   nacos:
-    image: nacos/nacos-server:v2.3.2
+    image: nacos/nacos-server:v3.2.2
     environment:
       MODE: standalone
-    ports: ["8848:8848", "9848:9848"]
-    depends_on: [mysql]
+      NACOS_AUTH_ENABLE: "true"
+      NACOS_AUTH_TOKEN: Q3VzdG9zRGVtb1NlY3JldEtleTAxMjM0NTY3ODlhYmNkZWY=   # base64(35 字符密钥)，demo 专用
+      NACOS_AUTH_IDENTITY_KEY: serverIdentity
+      NACOS_AUTH_IDENTITY_VALUE: custos-demo
+      JVM_XMS: 512m
+      JVM_XMX: 512m
+      JVM_XMN: 256m
+    ports: ["8848:8848", "9848:9848", "8081:8080"]   # gRPC 必须保持 主端口+1000 偏移
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/v3/console/health/readiness"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+
+  # 一次性管理员初始化：Nacos 3.x 无默认密码（POST /v3/auth/user/admin 仅首次有效，之后 409 → || true 幂等）。
+  # 控制台登录与 custos 客户端鉴权共用 nacos/DemoPass123。
+  nacos-init:
+    image: curlimages/curl:8.10.1
+    command: ["sh", "-c", "curl -fsS -X POST 'http://nacos:8848/nacos/v3/auth/user/admin' -d 'password=DemoPass123' || true"]
+    depends_on:
+      nacos:
+        condition: service_healthy
+
   custos:
     build: ..
     environment:
       CUSTOS_DB_PWD: custospwd
       NACOS_ADDR: nacos:8848
+      NACOS_USERNAME: nacos
+      NACOS_PASSWORD: DemoPass123
       CUSTOS_ADMIN_TOKEN: demo-token
     ports: ["8080:8080"]
-    depends_on: [mysql, nacos]
+    depends_on:
+      mysql:
+        condition: service_healthy
+      nacos-init:
+        condition: service_completed_successfully
