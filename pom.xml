@@ -30,6 +30,16 @@
         <type>pom</type>
         <scope>import</scope>
       </dependency>
+      <!-- 钉死 jackson 全家版本：nacos-client/jimmer/spring 各自传递不同 jackson 件，
+           nearest-wins 曾解析出 core 2.13.5 + databind 2.17.2 混版本（缺 StreamConstraintsException，
+           接真 Nacos 时 NoClassDefFoundError）。 -->
+      <dependency>
+        <groupId>com.fasterxml.jackson</groupId>
+        <artifactId>jackson-bom</artifactId>
+        <version>2.17.2</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
     </dependencies>
   </dependencyManagement>
   <build>
