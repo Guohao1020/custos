@@ -85,6 +85,7 @@ public final class DefaultSealManager implements SealManager {
 
     @Override
     public void seal() {
+        if (this.keyring != null) this.keyring.destroy();   // 清零内存密钥后再丢引用
         this.keyring = null;
         collected.clear();
     }

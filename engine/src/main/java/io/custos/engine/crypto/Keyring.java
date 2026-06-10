@@ -25,4 +25,11 @@ public final class Keyring {
         if (activeVersion < 0) throw new IllegalStateException("keyring is empty");
         return activeVersion;
     }
+
+    /** 销毁：清零全部版本密钥并阻断后续访问（重新密封路径调用）。 */
+    public void destroy() {
+        for (byte[] k : keys.values()) Zeroize.wipe(k);
+        keys.clear();
+        activeVersion = -1;
+    }
 }
