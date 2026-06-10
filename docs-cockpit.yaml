@@ -1,0 +1,44 @@
+project:
+  name: Custos
+  mark: C
+  eyebrow: "PROJECT COCKPIT"
+  tagline: "Nacos 原生 · AI Agent 身份·密钥·权限统一引擎"
+  output: docs/index.html
+
+paths:
+  repo: "."
+
+system_docs:
+  - id: readme
+    title: README
+    path: "{repo}/README.md"
+    desc: 仓库文档索引
+    icon: doc
+  - id: overall-arch
+    title: 总体架构 spec
+    path: "{repo}/docs/superpowers/specs/2026-06-09-custos-overall-architecture-spec.md"
+    desc: v0.1~v0.4 蓝图纲领
+    icon: design
+  - id: prod-arch
+    title: 生产架构 spec
+    path: "{repo}/docs/superpowers/specs/2026-06-09-custos-production-architecture-spec.md"
+    desc: 模块化单体 + SPI 插件
+    icon: design
+  - id: mvp-design
+    title: MVP v0.1 实现级 spec
+    path: "{repo}/docs/superpowers/specs/2026-06-09-custos-mvp-v0.1-design.md"
+    desc: 接口契约级设计
+    icon: design
+  - id: obo-design
+    title: OBO 委托 spec
+    path: "{repo}/docs/superpowers/specs/2026-06-09-custos-obo-design.md"
+    desc: 委托 / STS token-exchange
+    icon: design
+
+modules:
+  scan:
+    dir: "{repo}/docs/spec/module"
+    title_transform: prefix-dot-titlecase
+
+frontmatter:
+  enabled: true
