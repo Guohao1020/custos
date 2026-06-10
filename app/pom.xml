@@ -21,7 +21,19 @@
   </dependencies>
   <build>
     <plugins>
-      <plugin><groupId>org.springframework.boot</groupId><artifactId>spring-boot-maven-plugin</artifactId><version>3.3.2</version></plugin>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <version>3.3.2</version>
+        <!-- parent 非 spring-boot-starter-parent，repackage 不会自动绑定，须显式声明以产出可执行 fat jar。
+             classifier=exec：主产物保持 thin jar（failsafe IT 用），可执行 fat jar 为 *-exec.jar（Dockerfile 用）。 -->
+        <executions>
+          <execution>
+            <goals><goal>repackage</goal></goals>
+            <configuration><classifier>exec</classifier></configuration>
+          </execution>
+        </executions>
+      </plugin>
       <!-- 同 engine：Testcontainers docker-java 默认 API 版本低于新引擎 MinAPIVersion，钉到 1.40。 -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>

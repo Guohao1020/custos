@@ -1,0 +1,6 @@
+# 构建上下文瘦身：编译产物/版本库/文档不进镜像构建
+**/target
+.git
+docs
+host-demo.log
+*.log
