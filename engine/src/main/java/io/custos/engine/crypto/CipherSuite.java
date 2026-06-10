@@ -13,6 +13,9 @@ public interface CipherSuite {
     /** 套件标识，写入 Barrier 封套头：0x01=intl, 0x02=gm。 */
     byte suiteId();
 
+    /** 对称密钥字节长度（AEAD key）。Intl=32(AES-256)，Gm=16(SM4-128)。 */
+    default int keyLength() { return 32; }
+
     /** AEAD 加密（AES-256-GCM），返回 nonce||密文+tag。aad 可为 null。 */
     byte[] encrypt(byte[] key, byte[] plaintext, byte[] aad);
 

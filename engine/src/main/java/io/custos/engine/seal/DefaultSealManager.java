@@ -38,9 +38,9 @@ public final class DefaultSealManager implements SealManager {
 
     @Override
     public List<byte[]> init(int shares, int threshold) {
-        byte[] master = new byte[32];
+        byte[] master = new byte[suite.keyLength()];
         random.nextBytes(master);
-        byte[] barrierKey = new byte[32];
+        byte[] barrierKey = new byte[suite.keyLength()];
         random.nextBytes(barrierKey);
 
         // master 加密 barrier key → 落盘

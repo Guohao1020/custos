@@ -42,6 +42,12 @@
       <artifactId>jraft-core</artifactId>
       <version>1.4.0</version>
     </dependency>
+    <!-- 国密套件（SM4/SM3/SM2）由 BouncyCastle 提供（经审计库，绝不自写算法） -->
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcprov-jdk18on</artifactId>
+      <version>1.78.1</version>
+    </dependency>
     <dependency>
       <groupId>org.testcontainers</groupId>
       <artifactId>mysql</artifactId>
