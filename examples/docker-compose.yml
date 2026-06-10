@@ -1,3 +1,5 @@
+name: custos-demo
+
 services:
   mysql:
     image: mysql:8.0
