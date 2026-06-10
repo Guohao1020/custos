@@ -36,6 +36,12 @@
       <artifactId>postgresql</artifactId>
       <version>42.7.3</version>
     </dependency>
+    <!-- HA：Raft 复制状态机（SOFAJRaft，Apache-2.0 国产，纯 JVM 可进程内多节点测试）。版本经源码核准（M11 Task 0）。 -->
+    <dependency>
+      <groupId>com.alipay.sofa</groupId>
+      <artifactId>jraft-core</artifactId>
+      <version>1.4.0</version>
+    </dependency>
     <dependency>
       <groupId>org.testcontainers</groupId>
       <artifactId>mysql</artifactId>
@@ -98,6 +104,8 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
         <configuration>
+          <!-- JRaft 反射访问 JDK 内部（SegmentList 等），Java 17+ 需显式 add-opens -->
+          <argLine>--add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED</argLine>
           <systemPropertyVariables>
             <api.version>1.40</api.version>
           </systemPropertyVariables>
@@ -107,6 +115,7 @@
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-failsafe-plugin</artifactId>
         <configuration>
+          <argLine>--add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED</argLine>
           <systemPropertyVariables>
             <api.version>1.40</api.version>
           </systemPropertyVariables>
