@@ -1,4 +1,4 @@
-name: custos-demo
+name: custos
 
 services:
   mysql:

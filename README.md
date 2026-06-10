@@ -1,8 +1,10 @@
-# Custos · Agent 身份 · 密钥 · 权限统一引擎（设计文档库）
+# Custos · Agent 身份 · 密钥 · 权限统一引擎
 
 > **Custos**（拉丁语「守护者」）—— 为 **Nacos / Spring Cloud 生态**打造的、**自托管**的 **AI Agent 身份 · 密钥 · 权限**统一引擎。借鉴 Vault/OpenBao，但**密钥引擎完全自研**、**Nacos 作控制面**，支持**国密**、**Apache-2.0** 开源。
 >
-> **本仓库当前为「调研 + 设计」阶段产物**（不含生产代码）。代码实现是下一阶段的事。
+> 仓库含完整实现（Java 21 · Maven 8 模块：engine/identity/authz/broker/app/cli/sdk）与全部调研/设计文档。
+> 一键起完整栈：`docker compose -f examples/docker-compose.yml up -d --build`（MySQL + Nacos 3.2 + custos），
+> e2e 验收 runbook 见 [examples/demo.md](examples/demo.md)；开发约定见 [CLAUDE.md](CLAUDE.md)。
 
 ---
 
