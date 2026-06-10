@@ -14,6 +14,7 @@
     <module>broker</module>
     <module>app</module>
     <module>cli</module>
+    <module>sdk</module>
   </modules>
   <properties>
     <maven.compiler.release>21</maven.compiler.release>
