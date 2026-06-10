@@ -27,6 +27,17 @@
       <version>0.12.5</version>
       <scope>runtime</scope>
     </dependency>
+    <!-- X.509-SVID 证书构建/解析（经审计库，不自写 ASN.1/X.509） -->
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcprov-jdk18on</artifactId>
+      <version>1.78.1</version>
+    </dependency>
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcpkix-jdk18on</artifactId>
+      <version>1.78.1</version>
+    </dependency>
     <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter</artifactId>
