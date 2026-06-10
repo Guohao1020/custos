@@ -11,9 +11,36 @@ docs:
   - { title: "ABAC 实现计划", path: "docs/superpowers/plans/2026-06-09-custos-abac.md" }
   - { title: "策略层设计", path: "docs/design/04-authz-design.md" }
 subtasks:
-  - { title: "M08-T1 RBAC domain 多租户 + DecisionRequest/Decision 富化(effect+risk) + 回归", done: true }
-  - { title: "M08-T2 AbacPolicy + RiskScorer SPI + 确定性 DefaultRiskScorer", done: true }
-  - { title: "M08-T3 ApprovalHook + AbacPdp 三态装饰链(越密级/风险分级/JIT)", done: true }
+  - id: M08-S1
+    title: "决策模型升级多租户域并全量回归"
+    done: true
+    code:
+      - "authz/src/main/java/io/custos/authz/DecisionRequest.java"
+      - "authz/src/main/java/io/custos/authz/Decision.java"
+      - "authz/src/main/java/io/custos/authz/CasbinPdp.java"
+    docs:
+      - "docs/superpowers/plans/2026-06-09-custos-abac.md:35-258"
+      - "docs/superpowers/specs/2026-06-09-custos-abac-design.md#4. RBAC domain 模型"
+  - id: M08-S2
+    title: "实现属性策略与请求风险评分扩展点"
+    done: true
+    code:
+      - "authz/src/main/java/io/custos/authz/AbacPolicy.java"
+      - "authz/src/main/java/io/custos/authz/RiskScorer.java"
+      - "authz/src/main/java/io/custos/authz/DefaultRiskScorer.java"
+    docs:
+      - "docs/superpowers/plans/2026-06-09-custos-abac.md:259-380"
+      - "docs/superpowers/specs/2026-06-09-custos-abac-design.md:93-102"
+  - id: M08-S3
+    title: "支持允许拒绝与需审批的三态决策链"
+    done: true
+    code:
+      - "authz/src/main/java/io/custos/authz/ApprovalHook.java"
+      - "authz/src/main/java/io/custos/authz/DenyApprovalHook.java"
+      - "authz/src/main/java/io/custos/authz/AbacPdp.java"
+    docs:
+      - "docs/superpowers/plans/2026-06-09-custos-abac.md:382-562"
+      - "docs/superpowers/specs/2026-06-09-custos-abac-design.md#2. 架构与数据流（装饰链）"
 ---
 
 # M08 · ABAC / 风险分级

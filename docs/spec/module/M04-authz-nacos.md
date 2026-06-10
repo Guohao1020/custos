@@ -11,9 +11,33 @@ docs:
   - { title: "Nacos 集成设计", path: "docs/design/05-nacos-integration.md" }
   - { title: "实现计划 4/5 · 策略 + Nacos", path: "docs/superpowers/plans/2026-06-09-custos-mvp-v0.1-authz-nacos.md" }
 subtasks:
-  - { title: "P4-T1 jCasbin RBAC 可解释 PDP", done: true }
-  - { title: "P4-T2 ControlPlane + PolicyWatcher 秒级吊销", done: true }
-  - { title: "P4-T3 NacosControlPlane + 环境门控冒烟 IT", done: true }
+  - id: M04-S1
+    title: "用 jCasbin 实现可解释的 RBAC 决策点"
+    done: true
+    code:
+      - "authz/src/main/java/io/custos/authz/CasbinPdp.java"
+      - "authz/src/test/java/io/custos/authz/CasbinPdpTest.java"
+    docs:
+      - "docs/superpowers/plans/2026-06-09-custos-mvp-v0.1-authz-nacos.md#Task 1:"
+      - "docs/design/04-authz-design.md#4. 可解释决策"
+  - id: M04-S2
+    title: "策略控制面订阅推送实现秒级吊销"
+    done: true
+    code:
+      - "authz/src/main/java/io/custos/authz/PolicyWatcher.java"
+      - "authz/src/test/java/io/custos/authz/RevocationViaWatcherTest.java"
+    docs:
+      - "docs/superpowers/plans/2026-06-09-custos-mvp-v0.1-authz-nacos.md#Task 2:"
+      - "docs/design/05-nacos-integration.md#2. 配置热更新 = 秒级权限变更与吊销"
+  - id: M04-S3
+    title: "对接真实 Nacos 的环境门控冒烟验证"
+    done: true
+    code:
+      - "authz/src/main/java/io/custos/authz/NacosControlPlane.java"
+      - "authz/src/test/java/io/custos/authz/NacosControlPlaneSmokeIT.java"
+    docs:
+      - "docs/superpowers/plans/2026-06-09-custos-mvp-v0.1-authz-nacos.md#Task 3:"
+      - "docs/design/05-nacos-integration.md#1. 注册什么"
 ---
 
 # M04 · 策略层 jCasbin + Nacos

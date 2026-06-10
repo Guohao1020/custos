@@ -11,8 +11,25 @@ docs:
   - { title: "KV 实现计划", path: "docs/superpowers/plans/2026-06-10-custos-kv.md" }
   - { title: "经纪层设计", path: "docs/design/06-secrets-broker.md" }
 subtasks:
-  - { title: "M10-T1 KvEngine 接口 + StorageKvEngine（版本化，纯单元）", done: true }
-  - { title: "M10-T2 PostgresDynamicCredentials（Testcontainers PG IT）", done: true }
+  - id: M10-S1
+    title: "实现基于加密存储的版本化键值引擎"
+    done: true
+    code:
+      - "engine/src/main/java/io/custos/engine/kv/KvEngine.java"
+      - "engine/src/main/java/io/custos/engine/kv/StorageKvEngine.java"
+      - "engine/src/test/java/io/custos/engine/kv/StorageKvEngineTest.java"
+    docs:
+      - "docs/superpowers/specs/2026-06-10-custos-kv-design.md#KvEngine（版本化"
+      - "docs/superpowers/plans/2026-06-10-custos-kv.md:29-176"
+  - id: M10-S2
+    title: "支持 PostgreSQL 的动态只读凭证"
+    done: true
+    code:
+      - "engine/src/main/java/io/custos/engine/secrets/PostgresDynamicCredentials.java"
+      - "engine/src/test/java/io/custos/engine/secrets/PostgresDynamicCredentialsIT.java"
+    docs:
+      - "docs/superpowers/specs/2026-06-10-custos-kv-design.md#PostgresDynamicCredentials（SecretsEngine"
+      - "docs/superpowers/plans/2026-06-10-custos-kv.md:180-338"
 ---
 
 # M10 · KV / 更多 secrets engine

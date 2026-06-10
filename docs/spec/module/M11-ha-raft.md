@@ -11,10 +11,41 @@ docs:
   - { title: "HA Raft 实现计划（含 Task 0 核准结果）", path: "docs/superpowers/plans/2026-06-10-custos-ha-raft.md" }
   - { title: "引擎加密设计（存储 ADR-3）", path: "docs/design/02-engine-crypto-design.md" }
 subtasks:
-  - { title: "M11-T0 JRaft API 源码核准 gate（gitee 克隆逐一核准并回写计划）", done: true }
-  - { title: "M11-T1 KvOp + 状态机 + Server/Client（单节点往返+快照+重启恢复）", done: true }
-  - { title: "M11-T2 3 节点复制 + leader failover 测试", done: true }
-  - { title: "M11-T3 RaftStorage/RaftSealStore/RaftLeaseManager（leader-only sweeper）", done: true }
+  - id: M11-S0
+    title: "逐一核准 JRaft 第三方 API 并回写计划"
+    done: true
+    code:
+      - "engine/src/main/java/io/custos/engine/raft/RaftKvServer.java"
+      - "engine/src/main/java/io/custos/engine/raft/RaftKvStateMachine.java"
+    docs:
+      - "docs/superpowers/plans/2026-06-10-custos-ha-raft.md#Task 0"
+  - id: M11-S1
+    title: "实现单节点复制状态机含快照与重启恢复"
+    done: true
+    code:
+      - "engine/src/main/java/io/custos/engine/raft/KvOp.java"
+      - "engine/src/main/java/io/custos/engine/raft/RaftKvStateMachine.java"
+      - "engine/src/main/java/io/custos/engine/raft/RaftKvServer.java"
+    docs:
+      - "docs/superpowers/plans/2026-06-10-custos-ha-raft.md:69-92"
+  - id: M11-S2
+    title: "验证三节点复制与主节点故障转移"
+    done: true
+    code:
+      - "engine/src/main/java/io/custos/engine/raft/RaftKvServer.java:48-52"
+      - "engine/src/test/java/io/custos/engine/raft/RaftKvClusterTest.java"
+    docs:
+      - "docs/superpowers/plans/2026-06-10-custos-ha-raft.md:96-117"
+  - id: M11-S3
+    title: "把存储密封租约适配到 Raft 复制层"
+    done: true
+    code:
+      - "engine/src/main/java/io/custos/engine/raft/RaftStorage.java"
+      - "engine/src/main/java/io/custos/engine/raft/RaftSealStore.java"
+      - "engine/src/main/java/io/custos/engine/raft/RaftLeaseManager.java"
+    docs:
+      - "docs/superpowers/plans/2026-06-10-custos-ha-raft.md:120-130"
+      - "docs/superpowers/specs/2026-06-10-custos-ha-raft-design.md:2-29"
 ---
 
 # M11 · HA Raft

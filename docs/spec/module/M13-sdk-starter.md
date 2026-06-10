@@ -11,9 +11,32 @@ docs:
   - { title: "SDK 实现计划", path: "docs/superpowers/plans/2026-06-10-custos-sdk.md" }
   - { title: "仓库脚手架设计", path: "docs/design/08-repo-scaffold.md" }
 subtasks:
-  - { title: "M13-T1 sdk 模块：Properties + CustosClient + AutoConfiguration + imports", done: true }
-  - { title: "M13-T2 CustosClient 请求形状测试（fake host）", done: true }
-  - { title: "M13-T3 CLI 补 query + operator seal 子命令", done: true }
+  - id: M13-S1
+    title: "提供 Spring Boot 自动装配的客户端 SDK"
+    done: true
+    code:
+      - "sdk/src/main/java/io/custos/sdk/CustosClientProperties.java"
+      - "sdk/src/main/java/io/custos/sdk/CustosClient.java"
+      - "sdk/src/main/java/io/custos/sdk/CustosClientAutoConfiguration.java"
+    docs:
+      - "docs/superpowers/plans/2026-06-10-custos-sdk.md#Task 1"
+      - "docs/superpowers/specs/2026-06-10-custos-sdk-design.md#3. 接口契约"
+  - id: M13-S2
+    title: "用假宿主校验客户端请求形状"
+    done: true
+    code:
+      - "sdk/src/test/java/io/custos/sdk/CustosClientTest.java"
+    docs:
+      - "docs/superpowers/plans/2026-06-10-custos-sdk.md#Task 2"
+      - "docs/superpowers/specs/2026-06-10-custos-sdk-design.md#5. 测试策略（纯单元，无 Docker）"
+  - id: M13-S3
+    title: "CLI 补齐查询与重新密封子命令"
+    done: true
+    code:
+      - "cli/src/main/java/io/custos/cli/CustosCli.java"
+      - "cli/src/test/java/io/custos/cli/CustosCliHttpTest.java"
+    docs:
+      - "docs/superpowers/plans/2026-06-10-custos-sdk.md#Task 3"
 ---
 
 # M13 · SDK + CLI 完善

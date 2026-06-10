@@ -11,9 +11,35 @@ docs:
   - { title: "SPIFFE 实现计划", path: "docs/superpowers/plans/2026-06-10-custos-spiffe.md" }
   - { title: "身份层设计（双载体令牌）", path: "docs/design/03-identity-design.md" }
 subtasks:
-  - { title: "M12-T1 SpiffeId 解析/渲染（TDD）", done: true }
-  - { title: "M12-T2 X509SvidIssuer/Verifier（BC，过期/异CA/无SAN 负路径）", done: true }
-  - { title: "M12-T3 SpiffeAuthenticator（PEM → Principal）", done: true }
+  - id: M12-S1
+    title: "解析与渲染 SPIFFE 风格身份标识"
+    done: true
+    code:
+      - "identity/src/main/java/io/custos/identity/SpiffeId.java"
+      - "identity/src/test/java/io/custos/identity/SpiffeIdTest.java"
+    docs:
+      - "docs/superpowers/plans/2026-06-10-custos-spiffe.md:30-73"
+      - "docs/superpowers/specs/2026-06-10-custos-spiffe-design.md#接口契约"
+  - id: M12-S2
+    title: "签发并校验 X.509 工作负载证书含负路径"
+    done: true
+    code:
+      - "identity/src/main/java/io/custos/identity/X509SvidIssuer.java"
+      - "identity/src/main/java/io/custos/identity/X509SvidVerifier.java"
+      - "identity/src/test/java/io/custos/identity/X509SvidTest.java"
+    docs:
+      - "docs/superpowers/plans/2026-06-10-custos-spiffe.md:77-220"
+      - "docs/superpowers/specs/2026-06-10-custos-spiffe-design.md:16-30"
+  - id: M12-S3
+    title: "从证书材料认证出请求主体"
+    done: true
+    code:
+      - "identity/src/main/java/io/custos/identity/SpiffeAuthenticator.java"
+      - "identity/src/test/java/io/custos/identity/SpiffeAuthenticatorTest.java"
+      - "identity/src/main/java/io/custos/identity/Svid.java"
+    docs:
+      - "docs/superpowers/plans/2026-06-10-custos-spiffe.md:224-295"
+      - "docs/superpowers/specs/2026-06-10-custos-spiffe-design.md#架构与数据流"
 ---
 
 # M12 · SPIFFE + X.509-SVID

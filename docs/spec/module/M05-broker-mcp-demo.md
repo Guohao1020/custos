@@ -12,10 +12,40 @@ docs:
   - { title: "实现计划 5/5 · 经纪 + MCP + demo", path: "docs/superpowers/plans/2026-06-09-custos-mvp-v0.1-broker-demo.md" }
   - { title: "Demo Runbook（AC1–AC8）", path: "examples/demo.md" }
 subtasks:
-  - { title: "P5-T1 SecretlessQueryExecutor 只读执行（IT）", done: true }
-  - { title: "P5-T2 BrokerService PEP 编排（IT）", done: true }
-  - { title: "P5-T3 MCP query_db + Spring Boot app + docker-compose", done: true }
-  - { title: "P5-T4 端到端 demo runbook（AC1–AC8）", done: true }
+  - id: M05-S1
+    title: "实现凭证不出库的只读查询执行器"
+    done: true
+    code:
+      - "broker/src/main/java/io/custos/broker/SecretlessQueryExecutor.java"
+      - "broker/src/test/java/io/custos/broker/SecretlessQueryExecutorIT.java"
+    docs:
+      - "docs/superpowers/specs/2026-06-09-custos-mvp-v0.1-design.md#3.9"
+      - "docs/superpowers/plans/2026-06-09-custos-mvp-v0.1-broker-demo.md:32-150"
+  - id: M05-S2
+    title: "编排经纪层策略执行点的完整决策链"
+    done: true
+    code:
+      - "broker/src/main/java/io/custos/broker/BrokerService.java"
+      - "broker/src/test/java/io/custos/broker/BrokerServiceIT.java"
+    docs:
+      - "docs/superpowers/specs/2026-06-09-custos-mvp-v0.1-design.md#3.9"
+      - "docs/superpowers/plans/2026-06-09-custos-mvp-v0.1-broker-demo.md:237-407"
+  - id: M05-S3
+    title: "经 MCP 暴露查询工具并容器化全栈"
+    done: true
+    code:
+      - "broker/src/main/java/io/custos/broker/McpQueryToolServer.java"
+    docs:
+      - "docs/superpowers/specs/2026-06-09-custos-mvp-v0.1-design.md#3.9"
+      - "docs/superpowers/plans/2026-06-09-custos-mvp-v0.1-broker-demo.md:410-604"
+  - id: M05-S4
+    title: "编写端到端验收手册并逐条跑通"
+    done: true
+    code:
+      - "examples/demo.md"
+    docs:
+      - "docs/superpowers/specs/2026-06-09-custos-mvp-v0.1-design.md#9"
+      - "docs/superpowers/plans/2026-06-09-custos-mvp-v0.1-broker-demo.md:607-705"
 ---
 
 # M05 · 经纪层 + MCP + Demo
