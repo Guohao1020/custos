@@ -81,7 +81,7 @@ public final class OperatorService {
         try {
             Connection admin = DriverManager.getConnection(adminJdbcUrl, adminUser, adminPwd);
             DynamicDbCredentials creds = new DynamicDbCredentials(admin, new DefaultLeaseManager(engine.sql()), props.getBroker().getTargetJdbcUrl());
-            BrokerService broker = new BrokerService(tokens, pdp, creds, new SecretlessQueryExecutor(), props.getBroker().getTargetJdbcUrl());
+            BrokerService broker = new BrokerService(tokens, pdp, creds, new SecretlessQueryExecutor(), props.getBroker().getTargetJdbcUrl(), audit);
             ctx.set(new UnsealedContext(storage, audit, broker));
         } catch (Exception e) {
             throw new IllegalStateException("assemble after unseal failed", e);

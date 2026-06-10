@@ -52,6 +52,15 @@ class BrokerServiceIT {
         tokens = new JwtTokenService(signKey, "custos", new InMemoryBlacklist());
     }
 
+    private final CapturingAudit audit = new CapturingAudit();
+
+    /** 捕获式审计：断言每次决策都落了一条审计行。 */
+    static final class CapturingAudit implements io.custos.engine.audit.AuditLog {
+        final java.util.List<io.custos.engine.audit.AuditRecord> records = new java.util.ArrayList<>();
+        public void append(io.custos.engine.audit.AuditRecord r) { records.add(r); }
+        public io.custos.engine.audit.VerifyResult verify() { return io.custos.engine.audit.VerifyResult.passed(); }
+    }
+
     private BrokerService broker() {
         CasbinPdp pdp = new CasbinPdp();
         pdp.reload("""
@@ -65,7 +74,7 @@ class BrokerServiceIT {
         ds.setPassword("root");
         DefaultLeaseManager leases = new DefaultLeaseManager(JimmerClients.of(ds));
         DynamicDbCredentials creds = new DynamicDbCredentials(admin, leases, appdbUrl());
-        return new BrokerService(tokens, pdp, creds, new SecretlessQueryExecutor(), appdbUrl());
+        return new BrokerService(tokens, pdp, creds, new SecretlessQueryExecutor(), appdbUrl(), audit);
     }
 
     private String tokenFor(String agent) {
@@ -84,6 +93,10 @@ class BrokerServiceIT {
         String dump = r.toString();
         assertFalse(dump.contains("v_ro_"), "结果不得含动态用户名");
         assertFalse(dump.toLowerCase().contains("password"), "结果不得含密码字段");
+        // 审计接线：允许的查询也必须落一条 allow 审计行
+        assertEquals(1, audit.records.size());
+        assertEquals("allow", audit.records.get(0).decision());
+        assertEquals("agent:claude-prod", audit.records.get(0).actor());
     }
 
     @Test
