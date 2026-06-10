@@ -24,10 +24,13 @@ public class CustosProperties {
     }
     public static class Nacos {
         private String serverAddr = ""; private String namespace = "public"; private String policyDataId = "custos-policy"; private String group = "DEFAULT_GROUP";
+        private String username = ""; private String password = "";
         public String getServerAddr() { return serverAddr; } public void setServerAddr(String v) { serverAddr = v; }
         public String getNamespace() { return namespace; } public void setNamespace(String v) { namespace = v; }
         public String getPolicyDataId() { return policyDataId; } public void setPolicyDataId(String v) { policyDataId = v; }
         public String getGroup() { return group; } public void setGroup(String v) { group = v; }
+        public String getUsername() { return username; } public void setUsername(String v) { username = v; }
+        public String getPassword() { return password; } public void setPassword(String v) { password = v; }
     }
     public static class Identity {
         private String issuer = "custos";

@@ -16,7 +16,9 @@ class NacosControlPlaneSmokeIT {
     @Test
     void publishGetAndSubscribeRoundTrips() throws Exception {
         String addr = System.getenv("NACOS_ADDR");
-        NacosControlPlane cp = new NacosControlPlane(addr, "public", "DEFAULT_GROUP");
+        // Nacos 3.x 默认开 API 鉴权：NACOS_USERNAME/NACOS_PASSWORD 存在时带上（无鉴权 server 则不设）
+        NacosControlPlane cp = new NacosControlPlane(addr, "public", "DEFAULT_GROUP",
+                System.getenv("NACOS_USERNAME"), System.getenv("NACOS_PASSWORD"));
 
         cp.publish("custos-policy-it", "p, role:reader, tool:db/*, read, allow");
         Thread.sleep(300);

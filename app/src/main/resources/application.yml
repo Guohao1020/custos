@@ -12,6 +12,8 @@ custos:
     namespace: public
     policy-data-id: custos-policy
     group: DEFAULT_GROUP
+    username: ${NACOS_USERNAME:}
+    password: ${NACOS_PASSWORD:}
   identity:
     issuer: custos
   broker:

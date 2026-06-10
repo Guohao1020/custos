@@ -15,11 +15,21 @@ public final class NacosControlPlane implements ControlPlane {
     private final String group;
 
     public NacosControlPlane(String serverAddr, String namespace, String group) {
+        this(serverAddr, namespace, group, null, null);
+    }
+
+    /** Nacos 3.x 默认开启 API 鉴权，需带 username/password；留空则匿名（仅 auth 关闭的 server 可用）。 */
+    public NacosControlPlane(String serverAddr, String namespace, String group,
+                             String username, String password) {
         this.group = group;
         try {
             Properties props = new Properties();
             props.put("serverAddr", serverAddr);
             props.put("namespace", namespace);
+            if (username != null && !username.isBlank()) {
+                props.put("username", username);
+                props.put("password", password == null ? "" : password);
+            }
             this.configService = NacosFactory.createConfigService(props);
         } catch (Exception e) {
             throw new IllegalStateException("create nacos config service failed", e);
