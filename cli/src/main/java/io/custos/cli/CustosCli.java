@@ -13,7 +13,7 @@ import java.net.http.HttpResponse;
 
 /** Custos 运维 CLI：operator/policy/audit 打 REST admin。--server/--token 跨子命令继承。 */
 @Command(name = "custos", mixinStandardHelpOptions = true,
-        subcommands = {CustosCli.Operator.class, CustosCli.PolicyCmd.class, CustosCli.AuditCmd.class})
+        subcommands = {CustosCli.Operator.class, CustosCli.PolicyCmd.class, CustosCli.AuditCmd.class, CustosCli.Query.class})
 public class CustosCli {
 
     @Option(names = "--server", scope = ScopeType.INHERIT, defaultValue = "http://127.0.0.1:8080")
@@ -36,8 +36,11 @@ public class CustosCli {
         return "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n") + "\"";
     }
 
-    @Command(name = "operator", subcommands = {Operator.Init.class, Operator.Unseal.class, Operator.Status.class})
+    @Command(name = "operator", subcommands = {Operator.Init.class, Operator.Unseal.class, Operator.Status.class, Operator.Seal.class})
     static class Operator {
+        @Command(name = "seal") static class Seal implements Runnable {
+            public void run() { try { System.out.println(post("/operator/seal", "{}")); } catch (Exception e) { throw new RuntimeException(e); } }
+        }
         @Command(name = "init") static class Init implements Runnable {
             @Option(names = "--shares", defaultValue = "5") int shares;
             @Option(names = "--threshold", defaultValue = "3") int threshold;
@@ -55,6 +58,19 @@ public class CustosCli {
     @Command(name = "policy") static class PolicyCmd implements Runnable {
         @Option(names = "--content", required = true) String content;
         public void run() { try { System.out.println(post("/policy", "{\"content\":" + jsonStr(content) + "}")); } catch (Exception e) { throw new RuntimeException(e); } }
+    }
+
+    @Command(name = "query") static class Query implements Runnable {
+        @Option(names = "--tool", required = true) String tool;
+        @Option(names = "--schema", required = true) String schema;
+        @Option(names = "--sql", required = true) String sql;
+        @Option(names = "--user-token", required = true) String userToken;
+        public void run() {
+            try {
+                System.out.println(post("/query_db", "{\"tool\":" + jsonStr(tool) + ",\"schema\":" + jsonStr(schema)
+                        + ",\"sql\":" + jsonStr(sql) + ",\"userToken\":" + jsonStr(userToken) + "}"));
+            } catch (Exception e) { throw new RuntimeException(e); }
+        }
     }
 
     @Command(name = "audit", subcommands = {AuditCmd.Verify.class}) static class AuditCmd {

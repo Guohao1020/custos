@@ -48,6 +48,11 @@ curl -s -XPOST localhost:8080/query_db -H 'Content-Type: application/json' \
   -d '{"tool":"db/query_orders","schema":"appdb","sql":"SELECT COUNT(*) AS n FROM appdb.orders","userToken":"<JWT>"}'
 # 期望 {"allowed":true,"rows":[{"n":3}],...}
 ```
+- **CLI**（等价）：
+```bash
+custos query --tool db/query_orders --schema appdb --sql "SELECT COUNT(*) AS n FROM appdb.orders" --user-token <JWT>
+# 一键重新密封（admin）：custos --token $TOKEN operator seal
+```
 
 **验收**：
 - AC3 动态凭证：查询期间 MySQL 出现临时 `v_ro_*` 只读账号，查询后被 DROP（`SELECT user FROM mysql.user` 验证）。由 `DynamicDbCredentialsIT` 覆盖。
