@@ -4,7 +4,7 @@
     "tagline": "Nacos 原生 · AI Agent 身份·密钥·权限统一引擎",
     "eyebrow": "PROJECT COCKPIT",
     "mark": "C",
-    "lastBuild": "2026-06-10 14:21",
+    "lastBuild": "2026-06-10 16:21",
     "doc_language": "en"
   },
   "systemDocs": [
@@ -398,8 +398,8 @@
           "path": "examples/demo.md",
           "resolved": "D:\\harvey_work\\custos\\examples\\demo.md",
           "exists": true,
-          "content": "# Custos MVP v0.1 Demo Runbook\n\n> 端到端演示与验收 AC1–AC8 的可执行步骤。`custos` CLI 即 `custos-cli` 模块（picocli），打 host 的 REST admin；\n> 也可直接用 `curl`。核心能力（密文存储、解封、动态凭证、secretless、哈希链审计、jCasbin 决策、Nacos 秒级吊销）\n> 均已在各模块单测/集成测试（含 `HostEndToEndIT`）中验证。\n\n## 启动\n\n```bash\ndocker compose -f examples/docker-compose.yml up -d --build\n# 等 mysql/nacos/custos healthy；admin token = demo-token（见 compose）\nexport TOKEN=demo-token\n```\n\nCLI 构建：`mvn -pl cli -am -DskipTests package`，入口 `io.custos.cli.CustosCli`（或 `java -jar cli/target/custos-cli-*.jar`）。\n\n## 1. 解封引擎（AC1）\n\n```bash\n# init 一次，记下 5 个 base64 分片；提交其中 3 个解封\ncustos --token $TOKEN operator init --shares 5 --threshold 3   # {\"shares\":[\"...\",\"...\",...]}（仅此一次）\ncustos --token $TOKEN operator unseal <share1>\ncustos --token $TOKEN operator unseal <share2>\ncustos --token $TOKEN operator unseal <share3>\ncustos --token $TOKEN operator status                          # {\"sealed\":false,...}\n# 等价 curl：\n# curl -s -XPOST localhost:8080/operator/init -H \"Authorization: Bearer $TOKEN\" -H 'Content-Type: application/json' -d '{\"shares\":5,\"threshold\":3}'\n```\n\n**通过标准**：缺片时 status 仍 sealed（progress<3）且查询被拒；满 3 片后 unsealed。\n（实现/测试：`OperatorService` + `HostEndToEndIT`：init 后 sealed、满 3 片解封并装配运营组件。）\n\n## 2. 写策略到 Nacos（允许 claude-prod 只读）\n\n```bash\ncustos --token $TOKEN policy --content 'p, role:reader, default, tool:db/*, read, allow\ng, agent:claude-prod, role:reader, default'\n```\n> 策略含 `dom` 列（=Nacos namespace，多租户隔离）；单租户演示用 `default`。\n\n## 3. Agent 经 MCP / REST 查询（AC3/AC4/AC5）\n\n- **MCP**：MCP 客户端（Claude/Codex）以 stdio 启动 custos-broker（`custos.transport.mcp-stdio=true` 且已解封），调用\n  `query_db { tool:\"db/query_orders\", schema:\"appdb\", sql:\"SELECT COUNT(*) AS n FROM appdb.orders\", userToken:\"<JWT>\" }`。\n- **REST**（等价，便于演示）：\n```bash\ncurl -s -XPOST localhost:8080/query_db -H 'Content-Type: application/json' \\\n  -d '{\"tool\":\"db/query_orders\",\"schema\":\"appdb\",\"sql\":\"SELECT COUNT(*) AS n FROM appdb.orders\",\"userToken\":\"<JWT>\"}'\n# 期望 {\"allowed\":true,\"rows\":[{\"n\":3}],...}\n```\n\n**验收**：\n- AC3 动态凭证：查询期间 MySQL 出现临时 `v_ro_*` 只读账号，查询后被 DROP（`SELECT user FROM mysql.user` 验证）。由 `DynamicDbCredentialsIT` 覆盖。\n- AC4 secretless：抓 MCP/REST 往返报文，**无连接串/密码**，只见结果。由 `BrokerServiceIT`/`HostEndToEndIT` 断言结果不含 `v_ro_`/`password`。\n- AC5 可解释：被拒时返回命中策略 + 原因。由 `CasbinPdpTest` 覆盖。\n\n## 4. 秒级吊销（AC6）\n\n```bash\n# 改策略为拒绝，计时到下一次查询被拒\ntime custos --token $TOKEN policy --content 'p, role:reader, default, tool:db/*, read, deny\ng, agent:claude-prod, role:reader, default'\n# 立即重发 query_db → 期望 {\"allowed\":false,...}；记录从改策略到被拒的延迟（应 ≤ 数秒）\n```\n\n**通过标准**：AC6 延迟 ≤ 数秒（记录 P95）。逻辑由 `RevocationViaWatcherTest`（内存控制面，毫秒级翻转）验证；\n真实 Nacos 推送由 `NacosControlPlaneSmokeIT` 在本 stack 起来后验证（见末尾）。\n\n## 5. 审计防篡改（AC7）\n\n```bash\ncustos --token $TOKEN audit verify                 # {\"ok\":true,...}\n# 手工改一条历史：UPDATE custos_audit SET action='write' WHERE seq=1;\ncustos --token $TOKEN audit verify                 # {\"ok\":false,\"brokenAtSeq\":1}\n```\n\n（实现/测试：`HashChainAuditLog` + `HashChainAuditLogIT`，已验证篡改即断链并定位 seq。）\n\n## 6. 落盘加密（AC2）\n\n```bash\ndocker exec -it <mysql> mysql -uroot -prootpwd -e \"SELECT HEX(svalue) FROM custos.custos_storage LIMIT 1\"\n```\n\n**通过标准**：均为密文；改一字节后读取报完整性失败。（`JimmerStorageIT` 断言落盘密文、`IntlSuiteAeadTest` 验证 GCM tag 篡改即 IntegrityException。）\n\n## 7. 一键起（AC8）\n\n`docker compose up` 起 Nacos+MySQL+Custos，按上述脚本跑通即 AC8 通过。\n\n## 附：验证真实 Nacos 秒级推送（计划 4 的环境门控 IT）\n\nstack 起来后，本地对着 compose 暴露的 Nacos 跑：\n\n```bash\nNACOS_ADDR=127.0.0.1:8848 mvn -q -pl authz test -Dtest=NacosControlPlaneSmokeIT\n```\n\n期望 PASS（publish→get→subscribe 收到秒级变更推送）。无 `NACOS_ADDR` 时该 IT 自动跳过。\n",
-          "mtime": "2026-06-09 18:35",
+          "content": "# Custos MVP v0.1 Demo Runbook\n\n> 端到端演示与验收 AC1–AC8 的可执行步骤。`custos` CLI 即 `custos-cli` 模块（picocli），打 host 的 REST admin；\n> 也可直接用 `curl`。核心能力（密文存储、解封、动态凭证、secretless、哈希链审计、jCasbin 决策、Nacos 秒级吊销）\n> 均已在各模块单测/集成测试（含 `HostEndToEndIT`）中验证。\n\n## 启动\n\n```bash\ndocker compose -f examples/docker-compose.yml up -d --build\n# 等 mysql/nacos/custos healthy；admin token = demo-token（见 compose）\nexport TOKEN=demo-token\n```\n\nCLI 构建：`mvn -pl cli -am -DskipTests package`，入口 `io.custos.cli.CustosCli`（或 `java -jar cli/target/custos-cli-*.jar`）。\n\n## 1. 解封引擎（AC1）\n\n```bash\n# init 一次，记下 5 个 base64 分片；提交其中 3 个解封\ncustos --token $TOKEN operator init --shares 5 --threshold 3   # {\"shares\":[\"...\",\"...\",...]}（仅此一次）\ncustos --token $TOKEN operator unseal <share1>\ncustos --token $TOKEN operator unseal <share2>\ncustos --token $TOKEN operator unseal <share3>\ncustos --token $TOKEN operator status                          # {\"sealed\":false,...}\n# 等价 curl：\n# curl -s -XPOST localhost:8080/operator/init -H \"Authorization: Bearer $TOKEN\" -H 'Content-Type: application/json' -d '{\"shares\":5,\"threshold\":3}'\n```\n\n**通过标准**：缺片时 status 仍 sealed（progress<3）且查询被拒；满 3 片后 unsealed。\n（实现/测试：`OperatorService` + `HostEndToEndIT`：init 后 sealed、满 3 片解封并装配运营组件。）\n\n## 2. 写策略到 Nacos（允许 claude-prod 只读）\n\n```bash\ncustos --token $TOKEN policy --content 'p, role:reader, default, tool:db/*, read, allow\ng, agent:claude-prod, role:reader, default'\n```\n> 策略含 `dom` 列（=Nacos namespace，多租户隔离）；单租户演示用 `default`。\n\n## 3. Agent 经 MCP / REST 查询（AC3/AC4/AC5）\n\n- **MCP**：MCP 客户端（Claude/Codex）以 stdio 启动 custos-broker（`custos.transport.mcp-stdio=true` 且已解封），调用\n  `query_db { tool:\"db/query_orders\", schema:\"appdb\", sql:\"SELECT COUNT(*) AS n FROM appdb.orders\", userToken:\"<JWT>\" }`。\n- **REST**（等价，便于演示）：\n```bash\ncurl -s -XPOST localhost:8080/query_db -H 'Content-Type: application/json' \\\n  -d '{\"tool\":\"db/query_orders\",\"schema\":\"appdb\",\"sql\":\"SELECT COUNT(*) AS n FROM appdb.orders\",\"userToken\":\"<JWT>\"}'\n# 期望 {\"allowed\":true,\"rows\":[{\"n\":3}],...}\n```\n- **CLI**（等价）：\n```bash\ncustos query --tool db/query_orders --schema appdb --sql \"SELECT COUNT(*) AS n FROM appdb.orders\" --user-token <JWT>\n# 一键重新密封（admin）：custos --token $TOKEN operator seal\n```\n\n**验收**：\n- AC3 动态凭证：查询期间 MySQL 出现临时 `v_ro_*` 只读账号，查询后被 DROP（`SELECT user FROM mysql.user` 验证）。由 `DynamicDbCredentialsIT` 覆盖。\n- AC4 secretless：抓 MCP/REST 往返报文，**无连接串/密码**，只见结果。由 `BrokerServiceIT`/`HostEndToEndIT` 断言结果不含 `v_ro_`/`password`。\n- AC5 可解释：被拒时返回命中策略 + 原因。由 `CasbinPdpTest` 覆盖。\n\n## 4. 秒级吊销（AC6）\n\n```bash\n# 改策略为拒绝，计时到下一次查询被拒\ntime custos --token $TOKEN policy --content 'p, role:reader, default, tool:db/*, read, deny\ng, agent:claude-prod, role:reader, default'\n# 立即重发 query_db → 期望 {\"allowed\":false,...}；记录从改策略到被拒的延迟（应 ≤ 数秒）\n```\n\n**通过标准**：AC6 延迟 ≤ 数秒（记录 P95）。逻辑由 `RevocationViaWatcherTest`（内存控制面，毫秒级翻转）验证；\n真实 Nacos 推送由 `NacosControlPlaneSmokeIT` 在本 stack 起来后验证（见末尾）。\n\n## 5. 审计防篡改（AC7）\n\n```bash\ncustos --token $TOKEN audit verify                 # {\"ok\":true,...}\n# 手工改一条历史：UPDATE custos_audit SET action='write' WHERE seq=1;\ncustos --token $TOKEN audit verify                 # {\"ok\":false,\"brokenAtSeq\":1}\n```\n\n（实现/测试：`HashChainAuditLog` + `HashChainAuditLogIT`，已验证篡改即断链并定位 seq。）\n\n## 6. 落盘加密（AC2）\n\n```bash\ndocker exec -it <mysql> mysql -uroot -prootpwd -e \"SELECT HEX(svalue) FROM custos.custos_storage LIMIT 1\"\n```\n\n**通过标准**：均为密文；改一字节后读取报完整性失败。（`JimmerStorageIT` 断言落盘密文、`IntlSuiteAeadTest` 验证 GCM tag 篡改即 IntegrityException。）\n\n## 7. 一键起（AC8）\n\n`docker compose up` 起 Nacos+MySQL+Custos，按上述脚本跑通即 AC8 通过。\n\n## 附：验证真实 Nacos 秒级推送（计划 4 的环境门控 IT）\n\nstack 起来后，本地对着 compose 暴露的 Nacos 跑：\n\n```bash\nNACOS_ADDR=127.0.0.1:8848 mvn -q -pl authz test -Dtest=NacosControlPlaneSmokeIT\n```\n\n期望 PASS（publish→get→subscribe 收到秒级变更推送）。无 `NACOS_ADDR` 时该 IT 自动跳过。\n",
+          "mtime": "2026-06-10 15:46",
           "meta": {}
         }
       ],
@@ -669,21 +669,21 @@
     {
       "id": "M10",
       "title": "KV / 更多 secrets engine",
-      "status": "not-started",
+      "status": "done",
       "sprint": "v0.3",
-      "progress": 0,
+      "progress": 100,
       "subtasks": [
         {
           "id": "M10-1e4a9d",
           "title": "M10-T1 KvEngine 接口 + StorageKvEngine（版本化，纯单元）",
-          "status": "not-started",
-          "done": false
+          "status": "done",
+          "done": true
         },
         {
           "id": "M10-dbf62a",
           "title": "M10-T2 PostgresDynamicCredentials（Testcontainers PG IT）",
-          "status": "not-started",
-          "done": false
+          "status": "done",
+          "done": true
         }
       ],
       "docs": [
@@ -715,11 +715,11 @@
           "meta": {}
         }
       ],
-      "desc": "版本化 KV 引擎（落 Storage、永远密文）+ PostgreSQL 动态只读凭证（SecretsEngine 第三实现）。spec/plan 已备好可开工。",
+      "desc": "版本化 KvEngine（落 Storage 永远密文，meta/#v{n} 键布局）+ PostgresDynamicCredentials（SecretsEngine 第三实现，CREATE ROLE/GRANT SELECT/DROP ROLE）。KV 4 单测 + PG IT 2 用例全绿。",
       "manualProgress": false,
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M10-kv-engine.md",
-      "mtime": "2026-06-10 14:20",
-      "bodyExcerpt": "# M10 · KV / 更多 secrets engine\n\n版本化 KV（kv/{path}#meta + #v{n} 键布局，密文性由 Storage/Barrier 继承）+ PG 动态凭证镜像 MySQL 实现。\nOracle/KV-TTL 为非目标（YAGNI）。",
+      "mtime": "2026-06-10 15:40",
+      "bodyExcerpt": "# M10 · KV / 更多 secrets engine\n\n静态机密版本化存取（密文性由 Storage/Barrier 继承）+ DB 引擎按方言扩展（MySQL/PG 双实现）。\nOracle/KV-TTL 留 YAGNI。",
       "owner": "",
       "prd_ref": "",
       "depends_on": [],
@@ -729,33 +729,33 @@
     {
       "id": "M11",
       "title": "HA · Raft/JRaft 强一致",
-      "status": "not-started",
+      "status": "done",
       "sprint": "v0.3",
-      "progress": 0,
+      "progress": 100,
       "subtasks": [
         {
           "id": "M11-9291bb",
           "title": "M11-T0 JRaft API 源码核准 gate（gitee 克隆逐一核准并回写计划）",
-          "status": "not-started",
-          "done": false
+          "status": "done",
+          "done": true
         },
         {
-          "id": "M11-693062",
-          "title": "M11-T1 KvOp + 状态机 + Server/Client（单节点往返+快照）",
-          "status": "not-started",
-          "done": false
+          "id": "M11-ab9a81",
+          "title": "M11-T1 KvOp + 状态机 + Server/Client（单节点往返+快照+重启恢复）",
+          "status": "done",
+          "done": true
         },
         {
           "id": "M11-e4ccf7",
           "title": "M11-T2 3 节点复制 + leader failover 测试",
-          "status": "not-started",
-          "done": false
+          "status": "done",
+          "done": true
         },
         {
           "id": "M11-2a12ef",
           "title": "M11-T3 RaftStorage/RaftSealStore/RaftLeaseManager（leader-only sweeper）",
-          "status": "not-started",
-          "done": false
+          "status": "done",
+          "done": true
         }
       ],
       "docs": [
@@ -769,12 +769,12 @@
           "meta": {}
         },
         {
-          "title": "HA Raft 实现计划（含 JRaft API 核准 gate）",
+          "title": "HA Raft 实现计划（含 Task 0 核准结果）",
           "path": "docs/superpowers/plans/2026-06-10-custos-ha-raft.md",
           "resolved": "D:\\harvey_work\\custos\\docs\\superpowers\\plans\\2026-06-10-custos-ha-raft.md",
           "exists": true,
-          "content": "# Custos HA · Raft/JRaft（M11）Implementation Plan\n\n> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.\n\n**Goal:** 用 SOFAJRaft 把 Storage/SealStore/LeaseManager 集群化（复制状态机 + leader-only 租约扫描），进程内多节点测试验证复制与 failover。\n\n**Architecture:** `RaftKvStateMachine`（内存 Map + 快照）承载密文 KV；`RaftKvClient` 走 leader 提交写 Task、读取走 leader-local（ReadIndex 列为可选强化）；`RaftStorage/RaftSealStore/RaftLeaseManager` 三个既有 SPI 落到该 KV 上。加密边界不变：状态机只见 Barrier 密文。\n\n**Tech Stack:** Java 21 · com.alipay.sofa:jraft-core 1.3.14 · JUnit 5（进程内多节点，无 Docker）\n\n> 前置：M02（Storage/SealStore/LeaseManager SPI）。对应 spec `docs/superpowers/specs/2026-06-10-custos-ha-raft-design.md`。\n> **铁律 gate**：Task 0 未完成（JRaft API 逐一源码核准并修正本计划代码）前，禁止进入 Task 1+。本计划中 JRaft 相关代码段是**契约草图**，以核准结果为准——这是本项目从 jjwt/jCasbin/MCP 核准流程沿袭的规矩。\n\n---\n\n## File Structure\n\n| 文件 | 职责 |\n|---|---|\n| `engine/pom.xml` | 加 jraft-core 1.3.14 |\n| `engine/src/main/java/io/custos/engine/raft/KvOp.java` | put/delete 操作（序列化进 raft log）|\n| `engine/src/main/java/io/custos/engine/raft/RaftKvStateMachine.java` | 状态机（apply/snapshot）|\n| `engine/src/main/java/io/custos/engine/raft/RaftKvServer.java` | 起一个 raft 节点 |\n| `engine/src/main/java/io/custos/engine/raft/RaftKvClient.java` | get/put/delete/list |\n| `engine/src/main/java/io/custos/engine/raft/RaftStorage.java` | Storage SPI 落地 |\n| `engine/src/main/java/io/custos/engine/raft/RaftSealStore.java` | SealStore SPI 落地 |\n| `engine/src/main/java/io/custos/engine/raft/RaftLeaseManager.java` | LeaseManager（leader-only 扫描）|\n| `engine/src/test/java/io/custos/engine/raft/*` | 单节点/3 节点/failover/租约测试 |\n\n---\n\n## Task 0: JRaft API 源码核准 gate（必须先做）\n\n- [ ] **Step 1: 克隆并核准 API**\n\n```bash\ngit clone --depth 1 https://gitee.com/sofastack/sofa-jraft research/sofa-jraft\n```\n逐一核准并把结果写回本计划（修正后续代码段）：\n1. `RaftGroupService(groupId, PeerId, NodeOptions)` 构造与 `start()` 返回 `Node` 的签名；\n2. `NodeOptions`：`setFsm/setLogUri/setRaftMetaUri/setSnapshotUri/setInitialConf` 的当前名称；\n3. `StateMachineAdapter.onApply(Iterator)` 中 `iter.getData()`（ByteBuffer）与 `iter.done()`/`done.run(Status)` 约定；\n4. 快照：`onSnapshotSave(SnapshotWriter, Closure)` / `onSnapshotLoad(SnapshotReader)` 的文件写入/注册（`writer.addFile`）；\n5. 客户端路由：`RouteTable.getInstance().updateConfiguration/refreshLeader/selectLeader` + `CliClientServiceImpl`；或进程内直接持 `Node` 引用提交 `Task`（测试态最简路径——**优先核准此路径**）；\n6. `Task(data, done)` 提交：`node.apply(task)`；\n7. leader 判定：`node.isLeader()`；\n8. 多节点进程内组网：同 JVM 多 `RaftGroupService` 不同端口/数据目录是否受支持（官方 test 用法）。\n\n- [ ] **Step 2: 把核准差异回写本计划（Edit 本文件），然后才进 Task 1**\n\n- [ ] **Step 3: 提交计划修正**\n```bash\ngit add docs/superpowers/plans/2026-06-10-custos-ha-raft.md\ngit commit -m \"docs(plan): verify JRaft API against source and correct M11 plan\"\n```\n\n---\n\n## Task 1: KvOp + RaftKvStateMachine + RaftKvServer/Client（单节点往返）\n\n**Files:** Create 上表 raft 包前 5 个文件；Test `RaftKvSingleNodeTest.java`\n\n- [ ] **Step 1: 写失败测试（单节点 put→get 往返 + 重启快照恢复）**\n\n```java\n// 契约草图（以 Task 0 核准修正为准）\n@Test void singleNodePutGetRoundTrips(@TempDir Path dir) {\n    RaftKvServer server = RaftKvServer.start(\"custos-kv\", \"127.0.0.1:18091\", \"127.0.0.1:18091\", dir);\n    RaftKvClient client = server.localClient();          // 进程内直连 Node\n    awaitLeader(server);                                  // 轮询 node.isLeader()\n    client.put(\"k1\", \"v1\".getBytes());\n    assertArrayEquals(\"v1\".getBytes(), client.get(\"k1\"));\n    client.delete(\"k1\");\n    assertNull(client.get(\"k1\"));\n    server.shutdown();\n}\n```\n\n- [ ] **Step 2: 实现 KvOp（type+key+value 的简单二进制序列化，避免引第三方序列化库）**\n- [ ] **Step 3: 实现 StateMachine（onApply 维护 `ConcurrentHashMap`；快照=全量 map 序列化到文件）**\n- [ ] **Step 4: 实现 Server/Client（写经 `node.apply(Task)` 同步等 done；读 leader-local 从状态机 map）**\n- [ ] **Step 5: 跑测试绿 → 提交** `feat(engine): JRaft single-node replicated KV (state machine + snapshot)`\n\n---\n\n## Task 2: 3 节点复制 + failover 测试\n\n**Files:** Test `RaftKvClusterTest.java`\n\n- [ ] **Step 1: 写失败测试**\n\n```java\n// 契约草图：三节点 127.0.0.1:18091/18092/18093，initialConf 互联\n@Test void replicatesToFollowersAndSurvivesLeaderFailover(@TempDir Path dir) {\n    List<RaftKvServer> nodes = RaftKvServer.startCluster(\"custos-kv\", PEERS, dir);\n    RaftKvServer leader = awaitLeaderOf(nodes);\n    leader.localClient().put(\"k\", \"v\".getBytes());\n    awaitApplied(nodes, \"k\");                                  // 三个状态机都可见\n    leader.shutdown();                                          // kill leader\n    RaftKvServer newLeader = awaitLeaderOf(remaining(nodes));   // 新 leader 当选\n    assertArrayEquals(\"v\".getBytes(), newLeader.localClient().get(\"k\"));\n    newLeader.localClient().put(\"k2\", \"v2\".getBytes());         // 继续可写\n}\n```\n\n- [ ] **Step 2: 实现 startCluster + 测试工具（动态端口探测避免冲突）→ 绿 → 提交** `test(engine): 3-node raft replication and leader failover`\n\n---\n\n## Task 3: RaftStorage + RaftSealStore + RaftLeaseManager\n\n**Files:** Create 三个 SPI 落地类；Test `RaftSpiAdaptersTest.java`\n\n- [ ] **Step 1: 写失败测试**\n  - `RaftStorage`：put/get/delete/list（前缀）契约（密文由调用方 seal，测试只验字节往返）；\n  - `RaftSealStore`：`DefaultSealManager` + `RaftSealStore` 跨\"节点实例\"恢复解封（同 M02 JimmerSealStoreIT 形态，store 换 raft）；\n  - `RaftLeaseManager`：register/renew/revoke/revokePrefix 语义同 `DefaultLeaseManager`；**leader-only 扫描**——非 leader 节点不触发 Revoker，leader shutdown 后新 leader 接管到期撤销。\n- [ ] **Step 2: 实现三类（租约行编码进 KV：`lease/{id}` → resourcePath|issuedAt|expireAt|revoked；扫描线程 `node.isLeader()` 守卫）**\n- [ ] **Step 3: 绿 → `mvn -B verify` 全量回归 → 提交** `feat(engine): raft-backed Storage/SealStore/LeaseManager (leader-only sweeper)`\n\n---\n\n## Self-Review（对照 HA spec）\n\n- 覆盖：状态机/Server/Client(§2/§3)→Task1；复制+failover(§4)→Task2；三 SPI + leader-only 租约(§2/§3)→Task3；API 核准风险(§5)→Task 0 gate。\n- 诚实声明：JRaft 代码段为契约草图，Task 0 核准后回写修正——与本项目 jjwt/jCasbin/MCP 的\"先核准后实现\"流程一致。\n- 读一致性 MVP 为 leader-local（spec §5 注明），ReadIndex 为可选强化步。\n",
-          "mtime": "2026-06-10 14:17",
+          "content": "# Custos HA · Raft/JRaft（M11）Implementation Plan\n\n> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.\n\n**Goal:** 用 SOFAJRaft 把 Storage/SealStore/LeaseManager 集群化（复制状态机 + leader-only 租约扫描），进程内多节点测试验证复制与 failover。\n\n**Architecture:** `RaftKvStateMachine`（内存 Map + 快照）承载密文 KV；`RaftKvClient` 走 leader 提交写 Task、读取走 leader-local（ReadIndex 列为可选强化）；`RaftStorage/RaftSealStore/RaftLeaseManager` 三个既有 SPI 落到该 KV 上。加密边界不变：状态机只见 Barrier 密文。\n\n**Tech Stack:** Java 21 · com.alipay.sofa:jraft-core 1.3.14 · JUnit 5（进程内多节点，无 Docker）\n\n> 前置：M02（Storage/SealStore/LeaseManager SPI）。对应 spec `docs/superpowers/specs/2026-06-10-custos-ha-raft-design.md`。\n> **铁律 gate**：Task 0 未完成（JRaft API 逐一源码核准并修正本计划代码）前，禁止进入 Task 1+。本计划中 JRaft 相关代码段是**契约草图**，以核准结果为准——这是本项目从 jjwt/jCasbin/MCP 核准流程沿袭的规矩。\n\n---\n\n## File Structure\n\n| 文件 | 职责 |\n|---|---|\n| `engine/pom.xml` | 加 jraft-core 1.3.14 |\n| `engine/src/main/java/io/custos/engine/raft/KvOp.java` | put/delete 操作（序列化进 raft log）|\n| `engine/src/main/java/io/custos/engine/raft/RaftKvStateMachine.java` | 状态机（apply/snapshot）|\n| `engine/src/main/java/io/custos/engine/raft/RaftKvServer.java` | 起一个 raft 节点 |\n| `engine/src/main/java/io/custos/engine/raft/RaftKvClient.java` | get/put/delete/list |\n| `engine/src/main/java/io/custos/engine/raft/RaftStorage.java` | Storage SPI 落地 |\n| `engine/src/main/java/io/custos/engine/raft/RaftSealStore.java` | SealStore SPI 落地 |\n| `engine/src/main/java/io/custos/engine/raft/RaftLeaseManager.java` | LeaseManager（leader-only 扫描）|\n| `engine/src/test/java/io/custos/engine/raft/*` | 单节点/3 节点/failover/租约测试 |\n\n---\n\n## Task 0: JRaft API 源码核准 gate（必须先做）\n\n- [ ] **Step 1: 克隆并核准 API**\n\n```bash\ngit clone --depth 1 https://gitee.com/sofastack/sofa-jraft research/sofa-jraft\n```\n逐一核准并把结果写回本计划（修正后续代码段）：\n1. `RaftGroupService(groupId, PeerId, NodeOptions)` 构造与 `start()` 返回 `Node` 的签名；\n2. `NodeOptions`：`setFsm/setLogUri/setRaftMetaUri/setSnapshotUri/setInitialConf` 的当前名称；\n3. `StateMachineAdapter.onApply(Iterator)` 中 `iter.getData()`（ByteBuffer）与 `iter.done()`/`done.run(Status)` 约定；\n4. 快照：`onSnapshotSave(SnapshotWriter, Closure)` / `onSnapshotLoad(SnapshotReader)` 的文件写入/注册（`writer.addFile`）；\n5. 客户端路由：`RouteTable.getInstance().updateConfiguration/refreshLeader/selectLeader` + `CliClientServiceImpl`；或进程内直接持 `Node` 引用提交 `Task`（测试态最简路径——**优先核准此路径**）；\n6. `Task(data, done)` 提交：`node.apply(task)`；\n7. leader 判定：`node.isLeader()`；\n8. 多节点进程内组网：同 JVM 多 `RaftGroupService` 不同端口/数据目录是否受支持（官方 test 用法）。\n\n- [x] **Step 2: 把核准差异回写本计划（Edit 本文件），然后才进 Task 1**\n\n> **核准结果（2026-06-10，gitee.com/sofastack/sofa-jraft@master）**：\n> - 版本：**用 1.4.0**（Central 在档，dependency:get 验证通过；计划原写 1.3.14 作废）。\n> - `RaftGroupService(String groupId, PeerId serverId, NodeOptions)` + `start()` → `Node` ✓\n> - `NodeOptions`：`setFsm/setLogUri/setRaftMetaUri/setSnapshotUri/setInitialConf(Configuration)/setElectionTimeoutMs` ✓\n> - `Node.apply(Task)`、`Node.isLeader()` ✓；`Task(ByteBuffer data, Closure done)` ✓；`Closure.run(Status)` ✓\n> - `StateMachine.onSnapshotSave(SnapshotWriter, Closure)` / `onSnapshotLoad(SnapshotReader): boolean`；`SnapshotWriter.addFile(String, Message)`；`onLeaderStart(long term)`（leader-only sweeper 钩子）✓\n> - `JRaftUtils.getConfiguration(\"ip:port,...\")` / `getPeerId(\"ip:port\")` ✓\n> - `Iterator extends java.util.Iterator<ByteBuffer>`，`getData()/done()` ✓\n> - 进程内多节点：jraft-core 自测即此用法，不同端口 + 各自数据目录即可。\n\n- [ ] **Step 3: 提交计划修正**\n```bash\ngit add docs/superpowers/plans/2026-06-10-custos-ha-raft.md\ngit commit -m \"docs(plan): verify JRaft API against source and correct M11 plan\"\n```\n\n---\n\n## Task 1: KvOp + RaftKvStateMachine + RaftKvServer/Client（单节点往返）\n\n**Files:** Create 上表 raft 包前 5 个文件；Test `RaftKvSingleNodeTest.java`\n\n- [ ] **Step 1: 写失败测试（单节点 put→get 往返 + 重启快照恢复）**\n\n```java\n// 契约草图（以 Task 0 核准修正为准）\n@Test void singleNodePutGetRoundTrips(@TempDir Path dir) {\n    RaftKvServer server = RaftKvServer.start(\"custos-kv\", \"127.0.0.1:18091\", \"127.0.0.1:18091\", dir);\n    RaftKvClient client = server.localClient();          // 进程内直连 Node\n    awaitLeader(server);                                  // 轮询 node.isLeader()\n    client.put(\"k1\", \"v1\".getBytes());\n    assertArrayEquals(\"v1\".getBytes(), client.get(\"k1\"));\n    client.delete(\"k1\");\n    assertNull(client.get(\"k1\"));\n    server.shutdown();\n}\n```\n\n- [ ] **Step 2: 实现 KvOp（type+key+value 的简单二进制序列化，避免引第三方序列化库）**\n- [ ] **Step 3: 实现 StateMachine（onApply 维护 `ConcurrentHashMap`；快照=全量 map 序列化到文件）**\n- [ ] **Step 4: 实现 Server/Client（写经 `node.apply(Task)` 同步等 done；读 leader-local 从状态机 map）**\n- [ ] **Step 5: 跑测试绿 → 提交** `feat(engine): JRaft single-node replicated KV (state machine + snapshot)`\n\n---\n\n## Task 2: 3 节点复制 + failover 测试\n\n**Files:** Test `RaftKvClusterTest.java`\n\n- [ ] **Step 1: 写失败测试**\n\n```java\n// 契约草图：三节点 127.0.0.1:18091/18092/18093，initialConf 互联\n@Test void replicatesToFollowersAndSurvivesLeaderFailover(@TempDir Path dir) {\n    List<RaftKvServer> nodes = RaftKvServer.startCluster(\"custos-kv\", PEERS, dir);\n    RaftKvServer leader = awaitLeaderOf(nodes);\n    leader.localClient().put(\"k\", \"v\".getBytes());\n    awaitApplied(nodes, \"k\");                                  // 三个状态机都可见\n    leader.shutdown();                                          // kill leader\n    RaftKvServer newLeader = awaitLeaderOf(remaining(nodes));   // 新 leader 当选\n    assertArrayEquals(\"v\".getBytes(), newLeader.localClient().get(\"k\"));\n    newLeader.localClient().put(\"k2\", \"v2\".getBytes());         // 继续可写\n}\n```\n\n- [ ] **Step 2: 实现 startCluster + 测试工具（动态端口探测避免冲突）→ 绿 → 提交** `test(engine): 3-node raft replication and leader failover`\n\n---\n\n## Task 3: RaftStorage + RaftSealStore + RaftLeaseManager\n\n**Files:** Create 三个 SPI 落地类；Test `RaftSpiAdaptersTest.java`\n\n- [ ] **Step 1: 写失败测试**\n  - `RaftStorage`：put/get/delete/list（前缀）契约（密文由调用方 seal，测试只验字节往返）；\n  - `RaftSealStore`：`DefaultSealManager` + `RaftSealStore` 跨\"节点实例\"恢复解封（同 M02 JimmerSealStoreIT 形态，store 换 raft）；\n  - `RaftLeaseManager`：register/renew/revoke/revokePrefix 语义同 `DefaultLeaseManager`；**leader-only 扫描**——非 leader 节点不触发 Revoker，leader shutdown 后新 leader 接管到期撤销。\n- [ ] **Step 2: 实现三类（租约行编码进 KV：`lease/{id}` → resourcePath|issuedAt|expireAt|revoked；扫描线程 `node.isLeader()` 守卫）**\n- [ ] **Step 3: 绿 → `mvn -B verify` 全量回归 → 提交** `feat(engine): raft-backed Storage/SealStore/LeaseManager (leader-only sweeper)`\n\n---\n\n## Self-Review（对照 HA spec）\n\n- 覆盖：状态机/Server/Client(§2/§3)→Task1；复制+failover(§4)→Task2；三 SPI + leader-only 租约(§2/§3)→Task3；API 核准风险(§5)→Task 0 gate。\n- 诚实声明：JRaft 代码段为契约草图，Task 0 核准后回写修正——与本项目 jjwt/jCasbin/MCP 的\"先核准后实现\"流程一致。\n- 读一致性 MVP 为 leader-local（spec §5 注明），ReadIndex 为可选强化步。\n",
+          "mtime": "2026-06-10 16:11",
           "meta": {}
         },
         {
@@ -787,11 +787,11 @@
           "meta": {}
         }
       ],
-      "desc": "SOFAJRaft 复制状态机：RaftStorage/RaftSealStore/RaftLeaseManager（leader-only 租约扫描），进程内多节点测试。含 API 核准 gate（Task 0）。spec/plan 已备好。",
+      "desc": "SOFAJRaft 1.4.0（源码核准）复制状态机：RaftStorage/RaftSealStore/RaftLeaseManager（leader-only 扫描）。单节点快照重启恢复 + 3 节点复制/failover + SPI 适配 6 测试全绿。",
       "manualProgress": false,
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M11-ha-raft.md",
-      "mtime": "2026-06-10 14:20",
-      "bodyExcerpt": "# M11 · HA Raft\n\n密文 KV 复制状态机；master/keyring 永不复制——各节点独立分片解封，仅复制 wrapped 配置。\n读一致性 MVP 为 leader-local，ReadIndex 列为可选强化。",
+      "mtime": "2026-06-10 16:11",
+      "bodyExcerpt": "# M11 · HA Raft\n\nADR-3 落地：密文 KV 复制状态机；master/keyring 永不复制（各节点独立分片解封）；\n租约\"不丢不重\"（状态机持久 + leader 单扫描者）。读为 leader-local，ReadIndex 留强化。\nJava 17+ 需 --add-opens java.base/java.util（已钉入 surefire/failsafe argLine，宿主接线时同样需要）。",
       "owner": "",
       "prd_ref": "",
       "depends_on": [],
@@ -801,27 +801,27 @@
     {
       "id": "M12",
       "title": "SPIFFE 认证 + X.509-SVID",
-      "status": "not-started",
+      "status": "done",
       "sprint": "v0.3",
-      "progress": 0,
+      "progress": 100,
       "subtasks": [
         {
           "id": "M12-529f5c",
           "title": "M12-T1 SpiffeId 解析/渲染（TDD）",
-          "status": "not-started",
-          "done": false
+          "status": "done",
+          "done": true
         },
         {
           "id": "M12-fea5dc",
           "title": "M12-T2 X509SvidIssuer/Verifier（BC，过期/异CA/无SAN 负路径）",
-          "status": "not-started",
-          "done": false
+          "status": "done",
+          "done": true
         },
         {
           "id": "M12-efac74",
           "title": "M12-T3 SpiffeAuthenticator（PEM → Principal）",
-          "status": "not-started",
-          "done": false
+          "status": "done",
+          "done": true
         }
       ],
       "docs": [
@@ -853,11 +853,11 @@
           "meta": {}
         }
       ],
-      "desc": "X.509-SVID 载体：SpiffeId + 自建 CA 签发（URI SAN）+ 验证提取 + SpiffeAuthenticator 接入 Authenticator SPI（OBO 已就绪）。BouncyCastle bcpkix，纯单元。spec/plan 已备好。",
+      "desc": "SpiffeId + BC 自建 CA 签发/验证 X.509-SVID（URI SAN）+ SpiffeAuthenticator 接入 Authenticator SPI。identity 18 单测全绿（含过期/异CA/无SAN 负路径）。",
       "manualProgress": false,
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M12-spiffe-svid.md",
-      "mtime": "2026-06-10 14:20",
-      "bodyExcerpt": "# M12 · SPIFFE + X.509-SVID\n\nJWT 载体已有（M03），本模块补 X.509 载体；attestation 插件谱系/mTLS 接线/CA 轮换为非目标。",
+      "mtime": "2026-06-10 14:53",
+      "bodyExcerpt": "# M12 · SPIFFE + X.509-SVID\n\n双载体令牌齐了：JWT（M03）+ X.509-SVID（本模块）。SVID 可直接喂 DefaultSts 做 OBO 交集。\nattestation 插件谱系/mTLS 接线/CA 轮换留后续。",
       "owner": "",
       "prd_ref": "",
       "depends_on": [],
@@ -867,27 +867,27 @@
     {
       "id": "M13",
       "title": "SDK（spring-boot-starter）+ CLI 完善",
-      "status": "not-started",
+      "status": "done",
       "sprint": "v0.3",
-      "progress": 0,
+      "progress": 100,
       "subtasks": [
         {
           "id": "M13-8b56c3",
           "title": "M13-T1 sdk 模块：Properties + CustosClient + AutoConfiguration + imports",
-          "status": "not-started",
-          "done": false
+          "status": "done",
+          "done": true
         },
         {
           "id": "M13-329999",
           "title": "M13-T2 CustosClient 请求形状测试（fake host）",
-          "status": "not-started",
-          "done": false
+          "status": "done",
+          "done": true
         },
         {
           "id": "M13-9c6f03",
           "title": "M13-T3 CLI 补 query + operator seal 子命令",
-          "status": "not-started",
-          "done": false
+          "status": "done",
+          "done": true
         }
       ],
       "docs": [
@@ -919,11 +919,11 @@
           "meta": {}
         }
       ],
-      "desc": "新模块 sdk=custos-spring-boot-starter（属性绑定+自动装配+CustosClient 打 host REST）；CLI 补 query / operator seal。纯单元（ApplicationContextRunner + JDK HttpServer fake）。spec/plan 已备好。",
+      "desc": "custos-spring-boot-starter（Properties+AutoConfiguration+CustosClient，backoff 语义）+ CLI 补 query/operator seal。sdk 5 单测 + cli 2 单测全绿，8 模块 verify 通过。",
       "manualProgress": false,
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M13-sdk-starter.md",
-      "mtime": "2026-06-10 14:20",
-      "bodyExcerpt": "# M13 · SDK + CLI 完善\n\n\"一行依赖拿到 client\"；注解式凭证注入/重试熔断/多语言 SDK 为非目标。",
+      "mtime": "2026-06-10 15:47",
+      "bodyExcerpt": "# M13 · SDK + CLI 完善\n\n业务服务\"一行依赖拿到 client\"；CLI 对齐 host 全部端点。注解语法糖/重试熔断留后续。",
       "owner": "",
       "prd_ref": "",
       "depends_on": [],
@@ -933,27 +933,27 @@
     {
       "id": "M14",
       "title": "加固（国密实测 · 内存加固 · 压测 · 外部审计）",
-      "status": "not-started",
+      "status": "done",
       "sprint": "v0.4",
-      "progress": 0,
+      "progress": 100,
       "subtasks": [
         {
           "id": "M14-d03c65",
           "title": "M14-T1 GmSuite（BC）+ keyLength 适配 + GmSeal 集成测试",
-          "status": "not-started",
-          "done": false
+          "status": "done",
+          "done": true
         },
         {
           "id": "M14-c7b5a3",
           "title": "M14-T2 Zeroize + Keyring.destroy（内存加固）",
-          "status": "not-started",
-          "done": false
+          "status": "done",
+          "done": true
         },
         {
           "id": "M14-7108cc",
           "title": "M14-T3 bench 标签用例 + RUNBOOK + AUDIT-PREP 准备包",
-          "status": "not-started",
-          "done": false
+          "status": "done",
+          "done": true
         }
       ],
       "docs": [
@@ -976,20 +976,29 @@
           "meta": {}
         },
         {
-          "title": "引擎加密设计（国密/内存安全 §8/§9/§10）",
-          "path": "docs/design/02-engine-crypto-design.md",
-          "resolved": "D:\\harvey_work\\custos\\docs\\design\\02-engine-crypto-design.md",
+          "title": "压测 RUNBOOK",
+          "path": "docs/bench/RUNBOOK.md",
+          "resolved": "D:\\harvey_work\\custos\\docs\\bench\\RUNBOOK.md",
           "exists": true,
-          "content": "# 02 · 引擎内核：威胁模型与密码学设计（重中之重）\n\n> **定位**：本文是 Custos 安全的基石——给出引擎内核的**威胁模型**与**密码学设计**：密钥层级、Barrier 加密、Seal/Unseal（Shamir/KMS）、存储加密、内存安全、**哈希链防篡改审计**、**国密 SM2/SM3/SM4 可切换套件**，并明确所用**密码库与标准算法**。\n>\n> **铁律**：① **不自创密码学**——只用经过审计的密码库实现**标准算法**；② **master key 不明文落盘**；③ **数据落盘前 Barrier 加密**；④ **审计防篡改**；⑤ **密钥内存用完清零、禁 swap**；⑥ **吊销/租约可靠传播**。\n>\n> 设计灵感来源：OpenBao / Vault 的 Barrier·Seal·Lease 概念、SPIRE 的 KeyManager 思路（均**只借思想、不抄码**，见 `00-synthesis.md` 许可证表）。**本文为防御性安全软件的设计文档。**\n\n---\n\n## 1. 为什么这是重中之重\n\nCustos 是**持有密钥**的系统：一旦引擎内核设计有误，等于把企业所有凭证一次性暴露。PRD 风险表把\"自研密钥引擎安全风险\"列为 🔴 极高。因此本文遵循\"**先威胁建模、后密码设计、上生产前外部审计（v0.4）**\"的顺序，并在每个安全决策处标注风险与缓解。\n\n---\n\n## 2. 资产与信任边界\n\n### 2.1 受保护资产（按敏感度）\n| 资产 | 敏感度 | 失陷后果 |\n|---|---|---|\n| **master key / root key** | 🔴 最高 | 全盘沦陷（可解密一切） |\n| **barrier key（keyring）** | 🔴 | 解密所有落盘数据 |\n| 业务密钥 / 动态凭证 | 🟠 | 单资源泄漏（有 TTL，窗口小） |\n| 身份签名私钥 | 🟠 | 可伪造 Agent 身份 |\n| 审计日志 | 🟡 | 篡改可掩盖入侵 |\n| 策略（Nacos 配置） | 🟡 | 非密钥，但篡改可越权 |\n\n### 2.2 信任边界\n- **解封后的引擎进程内存** = 唯一持有 master/barrier key 明文之处（可信，但需内存防护）。\n- **存储后端、网络、LLM 上下文、Nacos 配置** = 不可信。\n\n---\n\n## 3. 威胁模型（STRIDE + 显式边界）\n\n### 3.1 在威胁模型内（必须防护）\n| 类别(STRIDE) | 威胁 | 缓解 |\n|---|---|---|\n| **S 伪造** | 伪造 Agent/用户身份 | 身份签名（ECDSA/SM2）、短 TTL、OBO 交集；mTLS |\n| **T 篡改** | 篡改落盘数据 / 审计日志 | Barrier AEAD（GCM tag 检测）；**审计哈希链**（任一条被改则链断） |\n| **R 抵赖** | 否认访问行为 | 每次\"决策+访问\"留痕（用户+Agent+任务+资源+结果），审计先于返回密钥 |\n| **I 信息泄露** | 窃听通信 / 读存储 / **密钥进 LLM** | TLS + 落盘前加密（只见密文）；**secretless 经纪（密钥不进 LLM）** |\n| **D 拒绝服务** | 引擎不可用 → 业务断 | 首版单节点（可用性受限，已知）；后续 Raft HA |\n| **E 提权** | 越权访问资源 | 默认拒绝 ACL；最小权限；JIT+审批；**Nacos 秒级吊销** |\n\n### 3.2 明确**不在**威胁模型内（声明边界，借 OpenBao 实践）\n- **对存储后端的任意控制**（可删可回滚）：攻击者若能任意写存储，可致数据丢失/回滚，难以完全防护（缓解：存储访问控制 + 备份 + Raft 多副本）。\n- **运行中进程的完整内存转储**：若攻击者能 dump 解封态进程内存，机密性受损（缓解：内存清零 + 禁 swap + 最小存活，**缩小**而非消除）。\n- **宿主机 root / 任意代码执行**：等同失守（缓解：最小权限部署、不 root 跑、镜像加固）。\n- **被攻陷的合法客户端**：持其凭证可在其权限内访问（缓解：短 TTL + 行为审计 + 秒级吊销）。\n- **管理员注入恶意策略/配置**：属内部恶意（缓解：策略变更审计 + 审批 + 四眼）。\n\n> **原则**：像 OpenBao 一样**显式声明边界**——不假装能防一切，把有限的防护资源投在最高价值资产（master key、审计完整性、密钥不进 LLM）。\n\n---\n\n## 4. 密钥层级（Key Hierarchy）\n\n借鉴 OpenBao 四层，落到 Custos：\n\n```mermaid\nflowchart TB\n    UNSEAL[\"unseal key（绝不落盘）<br/>Shamir 分片 或 KMS 解密\"]\n    ROOT[\"master/root key<br/>（落盘但被 unseal key 加密）\"]\n    KR[\"barrier keyring（加密密钥环, 可轮换）\"]\n    DATA[\"业务数据 / 凭证 / 身份私钥 / 审计\"]\n    UNSEAL -->|解密| ROOT\n    ROOT -->|解密| KR\n    KR -->|AES-256-GCM / SM4-GCM 加解密| DATA\n```\n\n| 层 | 存放 | 加密者 | 说明 |\n|---|---|---|---|\n| **unseal key** | **不落盘** | Shamir 分片 / KMS | 只用于解封；分片不能直接请求 |\n| **master/root key** | 落盘（密文） | unseal key | 启动后解密得到 |\n| **barrier key（keyring）** | 落盘（密文） | master key | 支持轮换（多版本 keyring） |\n| **数据加密密钥/数据** | 落盘（密文） | barrier key | 业务密钥、动态凭证元数据、身份私钥、审计链 |\n\n- **轮换**：barrier key 可在线轮换（新写用新版本，旧数据按版本号解密），master key/unseal key 经管理操作轮换；轮换不停服（除 seal 迁移）。\n\n---\n\n## 5. Barrier 加密层\n\n| 项 | 设计 |\n|---|---|\n| **算法（默认）** | **AES-256-GCM**，96-bit 随机 nonce（每对象独立随机），GCM 认证标签做完整性校验（AEAD：机密性+抗篡改一体） |\n| **算法（国密套件）** | **SM4-GCM**（128-bit 分组）或 SM4-CTR+SM3-HMAC（视库支持），可切换 |\n| **格式** | `[suite_id][key_version][nonce][ciphertext+tag]`——suite_id 标识算法套件，key_version 标识 keyring 版本，支持平滑轮换与套件迁移 |\n| **读路径** | 解密时校验 GCM tag/HMAC；失败即视为篡改，**中止处理** |\n| **实现** | 调审计库（见 §9），**不自写分组密码/GCM 模式** |\n\n---\n\n## 6. Seal / Unseal\n\n- 启动默认 **sealed**：知道存储位置，但无 master key，无法解密；除\"解封/查状态\"外几乎不可操作。\n- **解封流程**：提供 unseal key → 解密 master key → 解密 keyring → 进入 unsealed → 加载审计/认证/策略。\n- **检测入侵一键 seal**：丢弃内存中 master/barrier key，立即锁库。\n\n### 决策点 ① 解封默认方式（请你拍板）\n\n| 选项 | 机制 | 优点 | 缺点 |\n|---|---|---|---|\n| **A. Shamir 分片（默认）** ⭐推荐 | unseal key 用 Shamir 切 N 片取 M 片重建（默认 5/3） | 不依赖外部、不信任单人、契合自主可控、可演示 | 解封手动，自动化运维不便 |\n| **B. KMS/HSM 自动解封** | 启动调云 KMS/HSM 解密 master key，用 recovery key 做高危授权 | 运维省心、自动重启 | 强生命周期依赖（KMS key 删=不可恢复）、依赖外部信任、国内需信创 KMS |\n| **C. 两者皆备，按部署选** | 同时实现，配置切换 | 灵活 | 实现/测试成本高 |\n\n> **推荐**：**首版 A（Shamir）为默认 + 预留 KMS 接口（C 的接口形态）**。理由：① 自主可控、不绑外部 KMS；② 可演示 two-person rule；③ 接口预留，企业有信创 KMS（如阿里 KMS、华为 DEW）时可切 B。**KMS 自动解封若启用，文档须显著告警\"KMS key 删除=集群不可恢复\"并强制备份策略。**\n\n---\n\n## 7. 存储加密\n\n- **落盘前一律 Barrier 加密**，存储后端只见密文（存储不可信）。\n- 存储抽象接口（`engine/storage`）：`get/put/delete/list`，全部走 Barrier。\n\n### 决策点 ② 存储后端（请你拍板）\n\n| 选项 | 说明 | 优点 | 缺点 |\n|---|---|---|---|\n| **A. MySQL（首版默认）** ⭐推荐 | 企业已有，全密文存储 | 国内企业普遍在用、运维熟、PRD 指定 | 自身非强一致 HA（靠主从），HA 需额外方案 |\n| **B. 嵌入式（RocksDB/H2）** | 单机自带 | 零外部依赖、起步快 | 不适合集群、生产受限 |\n| **C. Raft 集成存储** | 自带强一致 HA（借 JRaft 思路） | 强一致、租约不丢不重 | 自研成本高，放 v0.3 HA |\n\n> **推荐**：**首版 A（MySQL，全密文）**作默认 + 抽象存储接口；**v0.3 引入 C（Raft/JRaft）做强一致 HA**（呼应\"租约不丢不重\"）。B 仅用于本地 dev。\n\n---\n\n## 8. 内存安全（Java 的挑战与对策）\n\n> 这是 Java 引擎相较 Go 的**主要短板**，必须正面设计（也是 `08` 引擎语言论证的关键输入）。\n\n| 风险 | Java 的问题 | 对策 |\n|---|---|---|\n| 明文密钥驻留 | `String` 不可变、入常量池，无法清零 | **一律用 `byte[]`/`char[]`/`javax.crypto.SecretKey`**，用完 `Arrays.fill(buf,(byte)0)` 显式清零；禁止把密钥转 `String` |\n| GC 复制残留 | GC 移动对象，明文可能在堆里留多份副本 | 关键密钥材料放**堆外内存（DirectByteBuffer / JNA malloc）**，手动清零；最小化明文存活时间 |\n| 换页到磁盘（swap） | 内存被换出 → 密钥落盘 | **mlock**：用 JNA 调 `mlock`/`VirtualLock` 锁定敏感内存页禁 swap；部署层禁用 swap |\n| 核心转储 | crash dump 含密钥 | 关闭 core dump（`ulimit -c 0`）、容器禁 dump |\n| 日志泄漏 | 误把密钥打日志 | 审计/日志层强制对密钥字段 HMAC 脱敏；代码评审红线 |\n\n- **明文存活最小化**：动态凭证\"现用现取、即用即清\"；身份私钥仅签名瞬间在内存。\n- 对比 Go：Go 可更细控内存（`[]byte` + 显式清零 + `mlock`），无 GC 复制串问题；**Java 需用堆外 + JNA 补齐**——这是 `08` 语言决策要权衡的点（生态一致性 vs 内存可控性）。\n\n---\n\n## 9. 密码学库与算法选型（明确\"用什么实现标准算法\"）\n\n> **绝不自写算法**。下表为\"标准国际套件\"与\"国密套件\"的可切换设计。\n\n| 用途 | 国际标准套件 | 国密套件 | 实现库 |\n|---|---|---|---|\n| 对称加密（Barrier/存储） | **AES-256-GCM** | **SM4-GCM** | **BouncyCastle**（含 GM/国密）；或 Tink（AES 部分） |\n| 哈希（审计链/指纹） | **SHA-256** | **SM3** | BouncyCastle / JDK MessageDigest |\n| HMAC（审计脱敏/完整性） | HMAC-SHA-256 | HMAC-SM3 | BouncyCastle / JDK Mac |\n| 签名（身份令牌） | **ECDSA P-256 / EdDSA / RSA-2048+** | **SM2** | BouncyCastle（含 SM2） |\n| 密钥派生 | HKDF / PBKDF2 / Argon2 | HKDF-SM3 | BouncyCastle |\n| 秘密分享（解封） | **Shamir's Secret Sharing**（GF(256)） | 同（算法无国别） | 成熟实现/审计库，不自写 |\n| 随机数 | `SecureRandom`（DRBG） | 同 | JDK / BC |\n\n**库选型**：\n- **BouncyCastle（含 BC-FIPS 与 GM 国密扩展）**：覆盖 AES/SM2/SM3/SM4/Shamir，Java 生态成熟、被广泛审计——**首选**。\n- **Tongsuo（铜锁）**：国密合规强（支持 TLCP/国密双证书），可作 TLS 层国密或经 JNI 调用，作信创合规增强选项。\n- **Tink**：高层易用、误用难，AES-GCM 等可用；国密支持弱，作辅助。\n\n### 决策点 ③ 国密默认开关（请你拍板）\n\n| 选项 | 说明 | 适用 |\n|---|---|---|\n| **A. 默认国际套件(AES/SHA/ECDSA)，国密可切换** ⭐推荐 | 算法套件抽象，配置切到 SM2/SM3/SM4 | 通用 + 信创可选 |\n| **B. 默认国密(SM2/SM3/SM4)** | 开箱即国密 | 强信创/合规客户 |\n| **C. 双栈并行** | 同时跑，按资源/租户选套件 | 复杂混合环境 |\n\n> **推荐 A**：默认 AES-256-GCM/SHA-256/ECDSA，**通过 `CipherSuite` 抽象一键切换到 SM4-GCM/SM3/SM2**。理由：兼顾通用性能与生态，同时把\"国密\"作为可宣称的信创/自主可控卖点；B/C 作部署期配置选项。**算法套件设计见 §10。**\n\n---\n\n## 10. 算法套件（CipherSuite）抽象设计\n\n```\ninterface CipherSuite {\n    byte suiteId();                          // 0x01=intl, 0x02=gm(国密)\n    byte[] encrypt(byte[] key, byte[] plaintext, byte[] aad);   // AES-GCM / SM4-GCM\n    byte[] decrypt(byte[] key, byte[] ciphertext, byte[] aad);  // 校验 tag, 失败抛异常\n    byte[] hash(byte[] data);                // SHA-256 / SM3\n    byte[] hmac(byte[] key, byte[] data);    // HMAC-SHA256 / HMAC-SM3\n    KeyPair genSignKey();                    // ECDSA-P256 / SM2\n    byte[] sign(PrivateKey k, byte[] data);\n    boolean verify(PublicKey k, byte[] data, byte[] sig);\n}\n// 实现：IntlSuite（BC: AES/SHA/ECDSA） / GmSuite（BC-GM: SM4/SM3/SM2）\n```\n\n- **落盘格式带 `suite_id`**：同一引擎可读取历史不同套件加密的数据，支持**套件平滑迁移**（类似 seal 迁移）。\n- 套件选择在**初始化时确定默认值**，按租户/namespace 可覆盖（高级）。\n\n---\n\n## 11. 防篡改审计（哈希链）—— 差异化能力\n\n> OpenBao/Vault 默认仅对敏感字段 HMAC 脱敏（非链）。Custos **升级为哈希链/只追加**，让日志不可被悄悄改（PRD E7/AU2）。\n\n### 11.1 哈希链结构\n```\nrecord_n = {\n  seq: n,\n  ts, actor(user+agent), task, resource, action, decision, result_digest,\n  sensitive_fields: HMAC(audit_key, value),     // 脱敏，不存明文\n  prev_hash: H(record_{n-1}),                    // 链接前一条\n}\nchain_hash_n = H( prev_hash || canonical(record_n) )   // H = SHA-256 / SM3\n```\n- 改动任一历史记录 → 其后所有 `chain_hash` 失配 → **可检测**。\n- 定期把 `chain_hash` 锚定（如周期性签名 checkpoint，或外发只追加存储/SIEM）→ 抗\"整体重写\"。\n\n### 11.2 性质\n| 性质 | 做法 |\n|---|---|\n| 完整性 | 哈希链 + 周期签名 checkpoint |\n| 机密性 | 敏感字段 HMAC 脱敏（可关联不泄明文） |\n| 可问责 | 审计**先于**把密钥/结果返回客户端 |\n| 不可抵赖 | 记录 user+agent+task+resource+decision |\n| 外送 | 导出 ELK/OTel；异常/超额告警（AU2） |\n\n> **验证审计完整性**是一个独立可调用的操作（CLI `custos audit verify`）：重算链，定位首个断裂点。\n\n---\n\n## 12. 安全红线落地核对表（每条对应实现点）\n\n| 红线 | 落地 |\n|---|---|\n| master key 不明文落盘 | Shamir/KMS 加密后落盘；明文仅解封态内存（§4/§6） |\n| 数据落盘前 Barrier 加密 | 存储抽象强制走 Barrier（§5/§7） |\n| 审计防篡改 | 哈希链 + 只追加 + 周期签名（§11） |\n| 内存清零 + 禁 swap | byte[]+清零、堆外、mlock、禁 core dump（§8） |\n| 吊销/租约可靠传播 | Expiration Manager + Nacos 秒级热推 + 端到端验证（见 `05`/`06`） |\n| 不自创密码学 | 全用 BC/Tink/Tongsuo 实现标准/国密算法（§9） |\n| 密钥不进 LLM | secretless 经纪只回结果（见 `06`） |\n\n---\n\n## 13. 残留风险与外部审计\n\n| 残留风险 | 等级 | 缓解/计划 |\n|---|---|---|\n| 解封态内存被 dump | 🟠 | 内存清零/禁 swap 缩小窗口；不 root、镜像加固；声明在边界外 |\n| master key 泄漏 | 🔴 | Shamir/KMS、最小存活、一键 seal、轮换 |\n| Java GC 残留明文 | 🟠 | 堆外 + 显式清零（§8）；`08` 评估 Go 是否更优 |\n| 自研引擎实现缺陷 | 🔴 | 用审计库、威胁建模、单元/模糊测试；**v0.4 前外部安全审计**（借 SPIRE 的 Cure53 实践）|\n| KMS 自动解封强依赖 | 🟠 | 文档告警 + 强制备份；默认用 Shamir |\n\n> **上生产前置条件（PRD v0.4）**：完成**外部安全审计** + 渗透 + 密码学实现复核；发布安全责任声明与漏洞披露策略。\n\n---\n\n## 14. 待你拍板的三个岔路口（汇总）\n\n| # | 决策 | 推荐 | 备选 |\n|---|---|---|---|\n| ① | 解封默认方式 | **Shamir 默认 + KMS 接口预留** | 纯 KMS / 双备 |\n| ② | 存储后端 | **MySQL 全密文（首版）+ Raft（v0.3 HA）** | 嵌入式 / 直接 Raft |\n| ③ | 国密策略 | **默认国际套件 + 国密可切换（CipherSuite）** | 默认国密 / 双栈 |\n\n> 这三个会影响 `06`（经纪/租约）、`08`（语言与脚手架）。**默认值我已给推荐并据此继续设计；若你有不同取向，告诉我，我据此调整后续文档。**\n",
-          "mtime": "2026-06-08 18:44",
+          "content": "# Custos 压测 Runbook\n\n> 对应 M14 加固 spec §4。两层：① 吞吐 smoke（已实现，防性能悬崖回归）；② 完整 JMH 基准（外部审计前按本清单工程化）。\n\n## 1. 吞吐 smoke（现在就能跑）\n\nbench 标签用例默认排除（不进 CI 门禁），显式跑：\n\n```bash\nmvn -pl engine test -DbenchExcluded= -Dgroups=bench\n```\n\n当前覆盖：\n| 用例 | 内容 | 输出 |\n|---|---|---|\n| `BarrierBenchSmokeTest.sealOpenThroughput1KiB` | Barrier seal+open 1KiB ×50k（5k 预热） | ops/s · p50 · p99（打印，不设硬阈值） |\n\n判读：跑两个版本对比打印值，量级下滑（如 >30%）即性能悬崖，回 git bisect。\n\n## 2. 完整 JMH 基准（审计前工程化清单）\n\n建独立 `bench` 模块（jmh-core + jmh-generator-annprocess，不进默认 reactor profile），基准项：\n\n| 基准 | 度量 | 参考目标（首轮实测后填入） |\n|---|---|---|\n| `BarrierBench` | seal/open 1KiB/64KiB 吞吐与分位延迟 | — |\n| `JwtBench` | issue/verify（ES256）ops/s | — |\n| `PdpBench` | `AbacPdp.decide`（RBAC+风险链路）ops/s | — |\n| `QueryDbE2EBench` | host `/query_db` 端到端 P50/P99（含动态凭证签发+撤销） | — |\n| `GmVsIntlBench` | GmSuite vs IntlSuite 同载荷对比 | — |\n\n环境要求：固定 CPU 频率（关 turbo）、JDK 21、`-Xms=-Xmx`、JMH fork≥2 / warmup≥5 / iteration≥5；DB 类基准用本机 MySQL/PG 容器，记录容器版本。\n\n## 3. 注意\n\n- bench 用例与 JMH 结果都**不**作为 CI 门禁（环境噪声大），只做趋势记录。\n- Raft 相关基准（复制写延迟）待 ReadIndex 强化后一并做，避免给 leader-local 读测出虚高。\n",
+          "mtime": "2026-06-10 16:20",
+          "meta": {}
+        },
+        {
+          "title": "审计准备包 AUDIT-PREP",
+          "path": "docs/audit/AUDIT-PREP.md",
+          "resolved": "D:\\harvey_work\\custos\\docs\\audit\\AUDIT-PREP.md",
+          "exists": true,
+          "content": "# Custos 外部安全审计准备包（AUDIT-PREP）\n\n> 对应 M14 加固 spec §5、总体架构 spec §8（v0.4 = 外部审计通过即具备生产条件）。审计本身由外部机构执行；本文是给审计方的入口包 + 我方已知缺口的诚实清单。\n\n## 1. 资产与信任边界\n\n- 威胁模型（STRIDE）与信任边界图：`docs/design/02-engine-crypto-design.md` §3。\n- 最高价值资产：master key / 审计链完整性 / \"密钥不进 LLM\" 红线。\n- 边界铁律（代码层）：`engine` 无 Spring/MCP/Nacos 依赖；`authz` 不持密钥；`broker` 不判策略；Nacos 绝不存密钥；Raft 状态机只见 Barrier 密文。\n\n## 2. 密钥生命周期表\n\n| 密钥 | 产生 | 存储 | 使用 | 销毁 |\n|---|---|---|---|---|\n| unseal/master | `DefaultSealManager.init`（SecureRandom，长度=suite.keyLength()） | 仅 Shamir 分片在操作员手中；不落盘不进 env | 解封瞬间重建 | init/unseal 后立即 `Zeroize.wipe` |\n| barrier keyring | init 时生成 | 密文（master 加密）落 SealStore（MySQL/Raft） | 解封后内存 `Keyring` | `seal()` → `Keyring.destroy()` 清零 |\n| 审计 HMAC key | keyring 活动密钥确定性派生（HMAC, \"custos-audit-key\"） | 不落盘 | `HashChainAuditLog` | 随 keyring 销毁 |\n| JWT 签名钥 | host 启动生成（ECDSA P-256）；生产应由 KeyManager/Barrier 托管（缺口 G3） | 内存 | `JwtTokenService` | 进程退出 |\n| SVID CA 私钥 | `X509SvidIssuer` 构造（P-256） | 内存（缺口 G3 同） | 签发 SVID | 进程退出 |\n| 动态 DB 凭证 / AK·SK | 现场生成（hex/AKIA+hex） | 不持久化；仅 IssuedCred 返回值 | broker 即用即焚 | 租约撤销→DROP/吊销 |\n\n## 3. 依赖与许可\n\n全表：`docs/design/00-synthesis.md` §7。要点：全部 Apache/MIT/BSD 兼容（jjwt/jCasbin/Nacos/Jimmer/JRaft/BouncyCastle/picocli/Spring Boot）；**无** Vault(BSL)/OpenBao(MPL)/Infisical-EE 代码混入；Custos 自身 Apache-2.0。\n\n## 4. 测试覆盖摘要（审计时以 `mvn -B verify` 实测为准）\n\n| 模块 | 单测 | IT | 关键负路径 |\n|---|---|---|---|\n| engine | 45+（crypto/seal/raft/kv/secrets，含 GmSuite/Zeroize） | 14（MySQL/PG Testcontainers） | GCM tag 篡改拒、缺片不可解封、审计链断链定位、越权写拒、撤销后拒登录 |\n| identity | 18 | — | 过期/换钥/吊销拒、异 CA SVID 拒、空交集最小权限 |\n| authz | 15 | —（Nacos 冒烟环境门控） | 默认拒、deny 优先、跨租户隔离、越密级拒、高危 REQUIRE_APPROVAL |\n| broker/app | — | 7（含宿主端到端） | 未解封 409、结果无凭证泄漏断言、非 SELECT/多语句拒 |\n| sdk/cli | 7 | — | backoff、请求形状 |\n\n## 5. 已知缺口（诚实清单，审计重点）\n\n| # | 缺口 | 现状 | 缓解/计划 |\n|---|---|---|---|\n| G1 | JNA mlock / 禁 swap·core dump 未实现 | 文档级（02 §8） | 部署项：容器 `--memory-swap`、systemd 限制；JNA mlock 按审计意见实施 |\n| G2 | admin 面 TLS | 仅 Bearer Token + 回环约定 | 生产部署置于 mTLS/网关后；starter 支持 https base-url |\n| G3 | JWT 签名钥/SVID CA 钥未经 Barrier 托管 | host 启动内存生成 | KeyManager 接线（路线图）；私钥不落盘已满足 |\n| G4 | Raft 读为 leader-local | 弱于线性化读 | ReadIndex 强化列入计划可选步 |\n| G5 | KV 单写者假设 | 宿主层串行化约定 | Raft 线性化写已就绪，CAS 语义按需加 |\n| G6 | stdio MCP 模式假定启动前已解封 | 文档声明 | REST 模式无此约束（默认） |\n\n## 6. 审计建议入口\n\n1. 跑通 `examples/demo.md`（AC1–AC8）建立行为基线；\n2. 重点 fuzz：Barrier 封套解析、KvOp/租约条目解码、策略 CSV 解析、SVID PEM 解析；\n3. 检查点对照 §2 密钥表逐项验证\"不落盘/清零/不出边界\"。\n",
+          "mtime": "2026-06-10 16:20",
           "meta": {}
         }
       ],
-      "desc": "GmSuite（SM4-GCM/SM3/HmacSM3/SM2，suiteId=0x02，keyLength 适配）+ Zeroize/Keyring.destroy + bench 标签用例与压测 RUNBOOK + AUDIT-PREP 审计准备包。spec/plan 已备好。",
+      "desc": "GmSuite（SM4-GCM/SM3/HmacSM3/SM2，suiteId=0x02，keyLength 适配，国密跑通完整 seal 链）+ Zeroize/Keyring.destroy + bench 基线（Barrier 1KiB ≈13万 ops/s, p99=34µs）+ RUNBOOK + AUDIT-PREP（密钥生命周期表 + 缺口 G1-G6）。engine 45 单测全绿。",
       "manualProgress": false,
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M14-hardening.md",
-      "mtime": "2026-06-10 14:20",
-      "bodyExcerpt": "# M14 · 加固\n\nADR-4 国密落地 + 内存清零系统化 + 压测/审计准备。外部审计本身在外部机构执行；\nmlock/JMH 工程化挂账于 AUDIT-PREP/RUNBOOK 按需实施。",
+      "mtime": "2026-06-10 16:21",
+      "bodyExcerpt": "# M14 · 加固\n\nADR-4 国密落地（CipherSuite 一键切换并跑通解封链）+ 内存清零系统化 + 性能基线 + 审计入口包。\n外部审计本身由外部机构执行（AUDIT-PREP 为入口）；mlock/JMH 工程化按 G1/RUNBOOK 挂账。",
       "owner": "",
       "prd_ref": "",
       "depends_on": [],
@@ -1032,7 +1041,7 @@
     "title mixes languages outside project doc_language='en': 'M10-T1 KvEngine 接口 + StorageKvEngine（版本化，纯单元）'",
     "title mixes languages outside project doc_language='en': 'M10-T2 PostgresDynamicCredentials（Testcontainers PG IT）'",
     "title mixes languages outside project doc_language='en': 'M11-T0 JRaft API 源码核准 gate（gitee 克隆逐一核准并回写计划）'",
-    "title mixes languages outside project doc_language='en': 'M11-T1 KvOp + 状态机 + Server/Client（单节点往返+快照）'",
+    "title mixes languages outside project doc_language='en': 'M11-T1 KvOp + 状态机 + Server/Client（单节点往返+快照+重启恢复）'",
     "title mixes languages outside project doc_language='en': 'M11-T2 3 节点复制 + leader failover 测试'",
     "title mixes languages outside project doc_language='en': 'M11-T3 RaftStorage/RaftSealStore/RaftLeaseManager（leader-only sweeper）'",
     "title mixes languages outside project doc_language='en': 'M12-T1 SpiffeId 解析/渲染（TDD）'",
@@ -1082,7 +1091,7 @@
     "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='M10-T1 KvEngine 接口 + StorageKvEngine（版本化，纯单元）'",
     "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='M10-T2 PostgresDynamicCredentials（Testcontainers PG IT）'",
     "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='M11-T0 JRaft API 源码核准 gate（gitee 克隆逐一核准并回写计划）'",
-    "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='M11-T1 KvOp + 状态机 + Server/Client（单节点往返+快照）'",
+    "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='M11-T1 KvOp + 状态机 + Server/Client（单节点往返+快照+重启恢复）'",
     "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='M11-T2 3 节点复制 + leader failover 测试'",
     "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='M11-T3 RaftStorage/RaftSealStore/RaftLeaseManager（leader-onl'",
     "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='M12-T1 SpiffeId 解析/渲染（TDD）'",
@@ -1396,8 +1405,8 @@
     {
       "severity": "warn",
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M11-ha-raft.md",
-      "field": "subtasks[M11-693062].title",
-      "message": "title mixes languages outside project doc_language='en': 'M11-T1 KvOp + 状态机 + Server/Client（单节点往返+快照）'",
+      "field": "subtasks[M11-ab9a81].title",
+      "message": "title mixes languages outside project doc_language='en': 'M11-T1 KvOp + 状态机 + Server/Client（单节点往返+快照+重启恢复）'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
       "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
       "category": "doc-lang-mix"
@@ -1846,8 +1855,8 @@
     {
       "severity": "warn",
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M11-ha-raft.md",
-      "field": "subtasks[M11-693062].anchors",
-      "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='M11-T1 KvOp + 状态机 + Server/Client（单节点往返+快照）'",
+      "field": "subtasks[M11-ab9a81].anchors",
+      "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='M11-T1 KvOp + 状态机 + Server/Client（单节点往返+快照+重启恢复）'",
       "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M11` 让 LLM 帮你诊断 + 建议补什么 anchor",
       "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
       "category": "subtask-missing-anchors"
