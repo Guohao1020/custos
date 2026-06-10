@@ -9,6 +9,10 @@
     <version>0.1.0-SNAPSHOT</version>
   </parent>
   <artifactId>custos-engine</artifactId>
+  <properties>
+    <!-- bench 标签默认排除；显式跑：mvn -pl engine test -DbenchExcluded= -Dgroups=bench -->
+    <benchExcluded>bench</benchExcluded>
+  </properties>
   <dependencies>
     <dependency>
       <groupId>com.codahale</groupId>
@@ -112,6 +116,8 @@
         <configuration>
           <!-- JRaft 反射访问 JDK 内部（SegmentList 等），Java 17+ 需显式 add-opens -->
           <argLine>--add-opens java.base/java.util=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED</argLine>
+          <!-- bench 标签默认排除（显式跑：-DbenchExcluded= -Dgroups=bench） -->
+          <excludedGroups>${benchExcluded}</excludedGroups>
           <systemPropertyVariables>
             <api.version>1.40</api.version>
           </systemPropertyVariables>
