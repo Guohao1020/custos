@@ -40,8 +40,8 @@ docker compose -f examples/docker-compose.yml up -d --build
 # MCP 全链路冒烟(拉起第二个 stdio host,共享存储/控制面,自动解封+签令牌)
 python examples/mcp_smoke_client.py "SELECT 1"
 
-# 看板重建(docs/index.html;python 是 3.9 太旧,必须 python3)
-python3 -m docs_cockpit build --config docs-cockpit.yaml
+# 看板重建(docs/index.html;python 是 3.9 太旧,必须 python3;1.0 起 build 更名 render)
+python3 -m docs_cockpit render --config docs-cockpit.yaml
 ```
 
 ## 工作节奏

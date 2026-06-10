@@ -4,7 +4,7 @@
     "tagline": "Nacos 原生 · AI Agent 身份·密钥·权限统一引擎",
     "eyebrow": "PROJECT COCKPIT",
     "mark": "C",
-    "lastBuild": "2026-06-10 16:21",
+    "lastBuild": "2026-06-10 23:32",
     "doc_language": "en"
   },
   "systemDocs": [
@@ -14,8 +14,8 @@
       "path": "D:\\harvey_work\\custos/README.md",
       "desc": "仓库文档索引",
       "icon": "doc",
-      "content": "# Custos · Agent 身份 · 密钥 · 权限统一引擎（设计文档库）\n\n> **Custos**（拉丁语「守护者」）—— 为 **Nacos / Spring Cloud 生态**打造的、**自托管**的 **AI Agent 身份 · 密钥 · 权限**统一引擎。借鉴 Vault/OpenBao，但**密钥引擎完全自研**、**Nacos 作控制面**，支持**国密**、**Apache-2.0** 开源。\n>\n> **本仓库当前为「调研 + 设计」阶段产物**（不含生产代码）。代码实现是下一阶段的事。\n\n---\n\n## 0. 这是什么\n\n本仓库收录 Custos 的**竞品调研笔记 + 设计文档 + 引用资料**。差异化护城河钉死在四点（详见 `docs/design/00-synthesis.md` §6）：\n\n1. **Nacos-native**：注册 + 策略分发 + 秒级热推走 Nacos，国内 Java 企业\"装上即用\"。\n2. **自托管 · 纯开源 · 自主可控**：Apache-2.0 + 国密 SM2/3/4 可切换 + 国产组件优先（Nacos/jCasbin）。\n3. **身份 · 密钥 · 权限一体**：三层（身份/策略 PDP/经纪 PEP）+ 自研引擎内核，一个产品交付。\n4. **策略热更新 = 秒级吊销**：Nacos 配置变更 → gRPC 秒级热推 → PDP/PEP 即时生效。\n\n---\n\n## 1. 文档导航\n\n### 📐 设计文档（`docs/design/`）— 按顺序读\n| # | 文档 | 内容 |\n|---|---|---|\n| 00 | [综合与决策](docs/design/00-synthesis.md) | 跨竞品对比、借鉴/放弃、自研边界、差异化钉死、**许可证合规表** |\n| 01 | [总体架构](docs/design/01-architecture.md) | PDP/PEP 模型、三层+引擎内核、Nacos 控制面、数据流时序 |\n| 02 | [引擎威胁模型与密码学设计](docs/design/02-engine-crypto-design.md) | **【重中之重】** Barrier/密钥层级/Seal-Unseal/内存安全/哈希链审计/国密套件 |\n| 03 | [身份层设计](docs/design/03-identity-design.md) | per-session 身份、认证方法、**OBO 委托** |\n| 04 | [策略层设计 PDP](docs/design/04-authz-design.md) | RBAC+ABAC、工具级 scope(SEP-835)、可解释、JIT 审批 |\n| 05 | [Nacos 控制面集成](docs/design/05-nacos-integration.md) | 注册、**秒级吊销**、namespace、MCP/A2A |\n| 06 | [经纪层设计 PEP](docs/design/06-secrets-broker.md) | 动态凭证、**secretless 经纪**、轮换 |\n| 07 | [MVP 纵向线](docs/design/07-mvp-vertical-slice.md) | 模块清单 + WBS + 验收标准 |\n| 08 | [仓库脚手架与选型](docs/design/08-repo-scaffold.md) | 目录结构、**引擎语言 Java vs Go 论证**、CI、依赖清单 |\n\n### 🔍 竞品学习笔记（`docs/research/`）\n| 笔记 | 学什么 |\n|---|---|\n| [openbao.md](docs/research/openbao.md) | 引擎内核：Barrier/Seal-Unseal/Lease/动态密钥/审计（MPL，不抄码）|\n| [vault.md](docs/research/vault.md) | 赛道设计语言；BSL 只读参照 |\n| [spire.md](docs/research/spire.md) | 工作负载身份：SVID/attestation/信任域（Apache，可深借）|\n| [cerbos.md](docs/research/cerbos.md) | 解耦 PDP：策略模型/可解释决策 |\n| [casbin.md](docs/research/casbin.md) | 国产授权库：PERM 模型（落地内核）|\n| [nacos.md](docs/research/nacos.md) | 控制面：配置热更新/MCP Registry（护城河）|\n| [infisical.md](docs/research/infisical.md) | 密钥平台 + \"agents never see secret\"（直接竞品）|\n| [jimmer.md](docs/research/jimmer.md) | 持久化 ORM 选型：不可变实体 + 类型安全 DSL（Apache，国产活跃）|\n\n### 📚 引用资料中文摘要（`docs/references/`）\n[MCP/SEP-835](docs/references/mcp-sep-835.md) · [OAuth2 Token-Exchange/OBO](docs/references/oauth2-token-exchange-obo.md) · [SPIFFE/SPIRE](docs/references/spiffe-spire.md) · [Vault/OpenBao Barrier·Seal·Lease](docs/references/vault-openbao-barrier-seal-lease.md) · [Cerbos 策略模型](docs/references/cerbos-policy-model.md) · [Casbin PERM 模型](docs/references/casbin-perm-model.md) · [Nacos MCP/配置热更新](docs/references/nacos-mcp-registry-config.md) · [国密 SM2/SM3/SM4](docs/references/gm-crypto-sm2-sm3-sm4.md)\n\n### 📄 输入材料（`brief/`）\nPRD（需求真相源）、任务书、交付灰度调研、Nacos 开发参考——`brief/` 目录。\n\n---\n\n## 2. 关键决策（已拍板）\n\n| 决策 | 取向 |\n|---|---|\n| 引擎语言 | **Java 全栈**（生态一致；内存安全短板工程补齐）；SDK 提供 Spring Boot Starter |\n| 解封方式 | **Shamir 默认 + KMS 接口预留** |\n| 存储后端 | **MySQL 全密文**（首版）；Raft/JRaft HA（v0.3）|\n| 国密策略 | **默认国际套件 + 国密可切换**（CipherSuite 抽象）|\n| 授权落地 | **借 Cerbos 设计 + jCasbin 落地** + 自研 Nacos Watcher |\n| 持久化 | **Jimmer ORM**（自身元数据表）+ 裸 JDBC（目标库账号管理/secretless SELECT），Barrier 加密边界在 service 层（ADR-8）|\n| 审计 | **哈希链/只追加防篡改**（差异化）|\n\n---\n\n## 3. 红线（贯穿全设计）\n\n- 密钥引擎**完全自研**，不依赖/不抄 Vault(BSL)/OpenBao(MPL)/Infisical-EE(商业) 代码。\n- **不自创密码学**：用 BouncyCastle/Tongsuo 实现标准/国密算法。\n- **密钥绝不进 LLM 上下文**，也**绝不进 Nacos**。\n- master key 不明文落盘；落盘前 Barrier 加密；审计防篡改；内存清零禁 swap；吊销可靠传播。\n- Custos 自身 **Apache-2.0**；上生产前（v0.4）**外部安全审计**。\n\n---\n\n## 4. 目录结构\n\n```\ncustos/\n├── README.md                 # 本文件（文档总索引）\n├── brief/                    # 输入材料：PRD / 任务书 / 调研\n├── docs/\n│   ├── research/             # 7 篇竞品学习笔记\n│   ├── design/               # 00~08 设计文档\n│   └── references/           # 8 篇引用资料中文摘要\n├── research/                 # 竞品源码（本地克隆，.gitignore，不提交）\n└── custos-design-docs.zip    # docs/ 打包交付物\n```\n\n> 说明：`engine/ identity/ authz/ broker/ nacos/ sdk/ cli/ examples/` 等代码目录在本阶段**仅作为 `08-repo-scaffold.md` 的设计描述**，尚未创建（下一阶段写代码时落地）。\n\n---\n\n## 5. 许可证\n\n计划以 **Apache-2.0** 开源。本仓库设计文档与笔记为原创；竞品笔记仅总结公开架构与设计思想，未复制受版权/许可保护的源码。\n",
-      "mtime": "2026-06-09 10:58",
+      "content": "# Custos · Agent 身份 · 密钥 · 权限统一引擎\n\n> **Custos**（拉丁语「守护者」）—— 为 **Nacos / Spring Cloud 生态**打造的、**自托管**的 **AI Agent 身份 · 密钥 · 权限**统一引擎。借鉴 Vault/OpenBao，但**密钥引擎完全自研**、**Nacos 作控制面**，支持**国密**、**Apache-2.0** 开源。\n>\n> 仓库含完整实现（Java 21 · Maven 8 模块：engine/identity/authz/broker/app/cli/sdk）与全部调研/设计文档。\n> 一键起完整栈：`docker compose -f examples/docker-compose.yml up -d --build`（MySQL + Nacos 3.2 + custos），\n> e2e 验收 runbook 见 [examples/demo.md](examples/demo.md)；开发约定见 [CLAUDE.md](CLAUDE.md)。\n\n---\n\n## 0. 这是什么\n\n本仓库收录 Custos 的**竞品调研笔记 + 设计文档 + 引用资料**。差异化护城河钉死在四点（详见 `docs/design/00-synthesis.md` §6）：\n\n1. **Nacos-native**：注册 + 策略分发 + 秒级热推走 Nacos，国内 Java 企业\"装上即用\"。\n2. **自托管 · 纯开源 · 自主可控**：Apache-2.0 + 国密 SM2/3/4 可切换 + 国产组件优先（Nacos/jCasbin）。\n3. **身份 · 密钥 · 权限一体**：三层（身份/策略 PDP/经纪 PEP）+ 自研引擎内核，一个产品交付。\n4. **策略热更新 = 秒级吊销**：Nacos 配置变更 → gRPC 秒级热推 → PDP/PEP 即时生效。\n\n---\n\n## 1. 文档导航\n\n### 📐 设计文档（`docs/design/`）— 按顺序读\n| # | 文档 | 内容 |\n|---|---|---|\n| 00 | [综合与决策](docs/design/00-synthesis.md) | 跨竞品对比、借鉴/放弃、自研边界、差异化钉死、**许可证合规表** |\n| 01 | [总体架构](docs/design/01-architecture.md) | PDP/PEP 模型、三层+引擎内核、Nacos 控制面、数据流时序 |\n| 02 | [引擎威胁模型与密码学设计](docs/design/02-engine-crypto-design.md) | **【重中之重】** Barrier/密钥层级/Seal-Unseal/内存安全/哈希链审计/国密套件 |\n| 03 | [身份层设计](docs/design/03-identity-design.md) | per-session 身份、认证方法、**OBO 委托** |\n| 04 | [策略层设计 PDP](docs/design/04-authz-design.md) | RBAC+ABAC、工具级 scope(SEP-835)、可解释、JIT 审批 |\n| 05 | [Nacos 控制面集成](docs/design/05-nacos-integration.md) | 注册、**秒级吊销**、namespace、MCP/A2A |\n| 06 | [经纪层设计 PEP](docs/design/06-secrets-broker.md) | 动态凭证、**secretless 经纪**、轮换 |\n| 07 | [MVP 纵向线](docs/design/07-mvp-vertical-slice.md) | 模块清单 + WBS + 验收标准 |\n| 08 | [仓库脚手架与选型](docs/design/08-repo-scaffold.md) | 目录结构、**引擎语言 Java vs Go 论证**、CI、依赖清单 |\n\n### 🔍 竞品学习笔记（`docs/research/`）\n| 笔记 | 学什么 |\n|---|---|\n| [openbao.md](docs/research/openbao.md) | 引擎内核：Barrier/Seal-Unseal/Lease/动态密钥/审计（MPL，不抄码）|\n| [vault.md](docs/research/vault.md) | 赛道设计语言；BSL 只读参照 |\n| [spire.md](docs/research/spire.md) | 工作负载身份：SVID/attestation/信任域（Apache，可深借）|\n| [cerbos.md](docs/research/cerbos.md) | 解耦 PDP：策略模型/可解释决策 |\n| [casbin.md](docs/research/casbin.md) | 国产授权库：PERM 模型（落地内核）|\n| [nacos.md](docs/research/nacos.md) | 控制面：配置热更新/MCP Registry（护城河）|\n| [infisical.md](docs/research/infisical.md) | 密钥平台 + \"agents never see secret\"（直接竞品）|\n| [jimmer.md](docs/research/jimmer.md) | 持久化 ORM 选型：不可变实体 + 类型安全 DSL（Apache，国产活跃）|\n\n### 📚 引用资料中文摘要（`docs/references/`）\n[MCP/SEP-835](docs/references/mcp-sep-835.md) · [OAuth2 Token-Exchange/OBO](docs/references/oauth2-token-exchange-obo.md) · [SPIFFE/SPIRE](docs/references/spiffe-spire.md) · [Vault/OpenBao Barrier·Seal·Lease](docs/references/vault-openbao-barrier-seal-lease.md) · [Cerbos 策略模型](docs/references/cerbos-policy-model.md) · [Casbin PERM 模型](docs/references/casbin-perm-model.md) · [Nacos MCP/配置热更新](docs/references/nacos-mcp-registry-config.md) · [国密 SM2/SM3/SM4](docs/references/gm-crypto-sm2-sm3-sm4.md)\n\n### 📄 输入材料（`brief/`）\nPRD（需求真相源）、任务书、交付灰度调研、Nacos 开发参考——`brief/` 目录。\n\n---\n\n## 2. 关键决策（已拍板）\n\n| 决策 | 取向 |\n|---|---|\n| 引擎语言 | **Java 全栈**（生态一致；内存安全短板工程补齐）；SDK 提供 Spring Boot Starter |\n| 解封方式 | **Shamir 默认 + KMS 接口预留** |\n| 存储后端 | **MySQL 全密文**（首版）；Raft/JRaft HA（v0.3）|\n| 国密策略 | **默认国际套件 + 国密可切换**（CipherSuite 抽象）|\n| 授权落地 | **借 Cerbos 设计 + jCasbin 落地** + 自研 Nacos Watcher |\n| 持久化 | **Jimmer ORM**（自身元数据表）+ 裸 JDBC（目标库账号管理/secretless SELECT），Barrier 加密边界在 service 层（ADR-8）|\n| 审计 | **哈希链/只追加防篡改**（差异化）|\n\n---\n\n## 3. 红线（贯穿全设计）\n\n- 密钥引擎**完全自研**，不依赖/不抄 Vault(BSL)/OpenBao(MPL)/Infisical-EE(商业) 代码。\n- **不自创密码学**：用 BouncyCastle/Tongsuo 实现标准/国密算法。\n- **密钥绝不进 LLM 上下文**，也**绝不进 Nacos**。\n- master key 不明文落盘；落盘前 Barrier 加密；审计防篡改；内存清零禁 swap；吊销可靠传播。\n- Custos 自身 **Apache-2.0**；上生产前（v0.4）**外部安全审计**。\n\n---\n\n## 4. 目录结构\n\n```\ncustos/\n├── README.md                 # 本文件（文档总索引）\n├── brief/                    # 输入材料：PRD / 任务书 / 调研\n├── docs/\n│   ├── research/             # 7 篇竞品学习笔记\n│   ├── design/               # 00~08 设计文档\n│   └── references/           # 8 篇引用资料中文摘要\n├── research/                 # 竞品源码（本地克隆，.gitignore，不提交）\n└── custos-design-docs.zip    # docs/ 打包交付物\n```\n\n> 说明：`engine/ identity/ authz/ broker/ nacos/ sdk/ cli/ examples/` 等代码目录在本阶段**仅作为 `08-repo-scaffold.md` 的设计描述**，尚未创建（下一阶段写代码时落地）。\n\n---\n\n## 5. 许可证\n\n计划以 **Apache-2.0** 开源。本仓库设计文档与笔记为原创；竞品笔记仅总结公开架构与设计思想，未复制受版权/许可保护的源码。\n",
+      "mtime": "2026-06-10 23:28",
       "exists": true
     },
     {
@@ -398,8 +398,8 @@
           "path": "examples/demo.md",
           "resolved": "D:\\harvey_work\\custos\\examples\\demo.md",
           "exists": true,
-          "content": "# Custos MVP v0.1 Demo Runbook\n\n> 端到端演示与验收 AC1–AC8 的可执行步骤。`custos` CLI 即 `custos-cli` 模块（picocli），打 host 的 REST admin；\n> 也可直接用 `curl`。核心能力（密文存储、解封、动态凭证、secretless、哈希链审计、jCasbin 决策、Nacos 秒级吊销）\n> 均已在各模块单测/集成测试（含 `HostEndToEndIT`）中验证。\n\n## 启动\n\n```bash\ndocker compose -f examples/docker-compose.yml up -d --build\n# 等 mysql/nacos/custos healthy；admin token = demo-token（见 compose）\nexport TOKEN=demo-token\n```\n\nCLI 构建：`mvn -pl cli -am -DskipTests package`，入口 `io.custos.cli.CustosCli`（或 `java -jar cli/target/custos-cli-*.jar`）。\n\n## 1. 解封引擎（AC1）\n\n```bash\n# init 一次，记下 5 个 base64 分片；提交其中 3 个解封\ncustos --token $TOKEN operator init --shares 5 --threshold 3   # {\"shares\":[\"...\",\"...\",...]}（仅此一次）\ncustos --token $TOKEN operator unseal <share1>\ncustos --token $TOKEN operator unseal <share2>\ncustos --token $TOKEN operator unseal <share3>\ncustos --token $TOKEN operator status                          # {\"sealed\":false,...}\n# 等价 curl：\n# curl -s -XPOST localhost:8080/operator/init -H \"Authorization: Bearer $TOKEN\" -H 'Content-Type: application/json' -d '{\"shares\":5,\"threshold\":3}'\n```\n\n**通过标准**：缺片时 status 仍 sealed（progress<3）且查询被拒；满 3 片后 unsealed。\n（实现/测试：`OperatorService` + `HostEndToEndIT`：init 后 sealed、满 3 片解封并装配运营组件。）\n\n## 2. 写策略到 Nacos（允许 claude-prod 只读）\n\n```bash\ncustos --token $TOKEN policy --content 'p, role:reader, default, tool:db/*, read, allow\ng, agent:claude-prod, role:reader, default'\n```\n> 策略含 `dom` 列（=Nacos namespace，多租户隔离）；单租户演示用 `default`。\n\n## 3. Agent 经 MCP / REST 查询（AC3/AC4/AC5）\n\n- **MCP**：MCP 客户端（Claude/Codex）以 stdio 启动 custos-broker（`custos.transport.mcp-stdio=true` 且已解封），调用\n  `query_db { tool:\"db/query_orders\", schema:\"appdb\", sql:\"SELECT COUNT(*) AS n FROM appdb.orders\", userToken:\"<JWT>\" }`。\n- **REST**（等价，便于演示）：\n```bash\ncurl -s -XPOST localhost:8080/query_db -H 'Content-Type: application/json' \\\n  -d '{\"tool\":\"db/query_orders\",\"schema\":\"appdb\",\"sql\":\"SELECT COUNT(*) AS n FROM appdb.orders\",\"userToken\":\"<JWT>\"}'\n# 期望 {\"allowed\":true,\"rows\":[{\"n\":3}],...}\n```\n- **CLI**（等价）：\n```bash\ncustos query --tool db/query_orders --schema appdb --sql \"SELECT COUNT(*) AS n FROM appdb.orders\" --user-token <JWT>\n# 一键重新密封（admin）：custos --token $TOKEN operator seal\n```\n\n**验收**：\n- AC3 动态凭证：查询期间 MySQL 出现临时 `v_ro_*` 只读账号，查询后被 DROP（`SELECT user FROM mysql.user` 验证）。由 `DynamicDbCredentialsIT` 覆盖。\n- AC4 secretless：抓 MCP/REST 往返报文，**无连接串/密码**，只见结果。由 `BrokerServiceIT`/`HostEndToEndIT` 断言结果不含 `v_ro_`/`password`。\n- AC5 可解释：被拒时返回命中策略 + 原因。由 `CasbinPdpTest` 覆盖。\n\n## 4. 秒级吊销（AC6）\n\n```bash\n# 改策略为拒绝，计时到下一次查询被拒\ntime custos --token $TOKEN policy --content 'p, role:reader, default, tool:db/*, read, deny\ng, agent:claude-prod, role:reader, default'\n# 立即重发 query_db → 期望 {\"allowed\":false,...}；记录从改策略到被拒的延迟（应 ≤ 数秒）\n```\n\n**通过标准**：AC6 延迟 ≤ 数秒（记录 P95）。逻辑由 `RevocationViaWatcherTest`（内存控制面，毫秒级翻转）验证；\n真实 Nacos 推送由 `NacosControlPlaneSmokeIT` 在本 stack 起来后验证（见末尾）。\n\n## 5. 审计防篡改（AC7）\n\n```bash\ncustos --token $TOKEN audit verify                 # {\"ok\":true,...}\n# 手工改一条历史：UPDATE custos_audit SET action='write' WHERE seq=1;\ncustos --token $TOKEN audit verify                 # {\"ok\":false,\"brokenAtSeq\":1}\n```\n\n（实现/测试：`HashChainAuditLog` + `HashChainAuditLogIT`，已验证篡改即断链并定位 seq。）\n\n## 6. 落盘加密（AC2）\n\n```bash\ndocker exec -it <mysql> mysql -uroot -prootpwd -e \"SELECT HEX(svalue) FROM custos.custos_storage LIMIT 1\"\n```\n\n**通过标准**：均为密文；改一字节后读取报完整性失败。（`JimmerStorageIT` 断言落盘密文、`IntlSuiteAeadTest` 验证 GCM tag 篡改即 IntegrityException。）\n\n## 7. 一键起（AC8）\n\n`docker compose up` 起 Nacos+MySQL+Custos，按上述脚本跑通即 AC8 通过。\n\n## 附：验证真实 Nacos 秒级推送（计划 4 的环境门控 IT）\n\nstack 起来后，本地对着 compose 暴露的 Nacos 跑：\n\n```bash\nNACOS_ADDR=127.0.0.1:8848 mvn -q -pl authz test -Dtest=NacosControlPlaneSmokeIT\n```\n\n期望 PASS（publish→get→subscribe 收到秒级变更推送）。无 `NACOS_ADDR` 时该 IT 自动跳过。\n",
-          "mtime": "2026-06-10 15:46",
+          "content": "# Custos MVP v0.1 Demo Runbook\n\n> 端到端演示与验收 AC1–AC8 的可执行步骤。`custos` CLI 即 `custos-cli` 模块（picocli），打 host 的 REST admin；\n> 也可直接用 `curl`。核心能力（密文存储、解封、动态凭证、secretless、哈希链审计、jCasbin 决策、Nacos 秒级吊销）\n> 均已在各模块单测/集成测试（含 `HostEndToEndIT`）中验证。\n\n## 启动\n\n```bash\ndocker compose -f examples/docker-compose.yml up -d --build\n# 等 mysql/nacos healthy → nacos-init 一次性初始化管理员 → custos 起；admin token = demo-token（见 compose）\nexport TOKEN=demo-token\n```\n\n> **Nacos 3.2**：API 鉴权开启（custos 以 `nacos/DemoPass123` 连接）；控制台从 8848 分离到独立端口，\n> Web UI（含 **AI 管理中心**：MCP 注册中心 / Agent / Skill 管理）在 http://localhost:8081 ，\n> 登录账号 `nacos` / `DemoPass123`（由 `nacos-init` 服务经一次性 `POST /v3/auth/user/admin` 初始化）。\n\nCLI 构建：`mvn -pl cli -am -DskipTests package`，入口 `io.custos.cli.CustosCli`（或 `java -jar cli/target/custos-cli-*.jar`）。\n\n## 1. 解封引擎（AC1）\n\n```bash\n# init 一次，记下 5 个 base64 分片；提交其中 3 个解封\ncustos --token $TOKEN operator init --shares 5 --threshold 3   # {\"shares\":[\"...\",\"...\",...]}（仅此一次）\ncustos --token $TOKEN operator unseal <share1>\ncustos --token $TOKEN operator unseal <share2>\ncustos --token $TOKEN operator unseal <share3>\ncustos --token $TOKEN operator status                          # {\"sealed\":false,...}\n# 等价 curl：\n# curl -s -XPOST localhost:8080/operator/init -H \"Authorization: Bearer $TOKEN\" -H 'Content-Type: application/json' -d '{\"shares\":5,\"threshold\":3}'\n```\n\n**通过标准**：缺片时 status 仍 sealed（progress<3）且查询被拒；满 3 片后 unsealed。\n（实现/测试：`OperatorService` + `HostEndToEndIT`：init 后 sealed、满 3 片解封并装配运营组件。）\n\n## 2. 写策略到 Nacos（允许 claude-prod 只读）\n\n```bash\ncustos --token $TOKEN policy --content 'p, role:reader, default, tool:db/*, read, allow\ng, agent:claude-prod, role:reader, default'\n```\n> 策略含 `dom` 列（=Nacos namespace，多租户隔离）；单租户演示用 `default`。\n\n## 3. Agent 经 MCP / REST 查询（AC3/AC4/AC5）\n\n> 先取一枚 `userToken`：生产由 Agent 经身份注册 / OBO 委托获取；demo 用 admin-gated 的开发端点现签一枚\n> （由 host 私钥 ES256 签名，受 Bearer admin token 保护）：\n> ```bash\n> JWT=$(curl -s -XPOST localhost:8080/token/issue -H \"Authorization: Bearer $TOKEN\" \\\n>   -H 'Content-Type: application/json' -d '{\"agent\":\"claude-prod\",\"scopes\":[\"tool:db/query_orders\"]}' \\\n>   | python3 -c \"import sys,json;print(json.load(sys.stdin)['jwt'])\")\n> ```\n\n- **MCP**：MCP 客户端（Claude/Codex）以 stdio 启动 custos-broker（`custos.transport.mcp-stdio=true` 且已解封），调用\n  `query_db { tool:\"db/query_orders\", schema:\"appdb\", sql:\"SELECT COUNT(*) AS n FROM appdb.orders\", userToken:\"<JWT>\" }`。\n- **REST**（等价，便于演示）：\n```bash\ncurl -s -XPOST localhost:8080/query_db -H 'Content-Type: application/json' \\\n  -d \"{\\\"tool\\\":\\\"db/query_orders\\\",\\\"schema\\\":\\\"appdb\\\",\\\"sql\\\":\\\"SELECT COUNT(*) AS n FROM appdb.orders\\\",\\\"userToken\\\":\\\"$JWT\\\"}\"\n# 期望 {\"allowed\":true,\"rows\":[{\"n\":3}],\"denyReason\":null}\n```\n- **CLI**（等价）：\n```bash\ncustos query --tool db/query_orders --schema appdb --sql \"SELECT COUNT(*) AS n FROM appdb.orders\" --user-token $JWT\n# 一键重新密封（admin）：custos --token $TOKEN operator seal\n```\n\n**验收**：\n- AC3 动态凭证：查询期间 MySQL 出现临时 `v_ro_*` 只读账号，查询后被 DROP（`SELECT user FROM mysql.user` 验证）。由 `DynamicDbCredentialsIT` 覆盖。\n- AC4 secretless：抓 MCP/REST 往返报文，**无连接串/密码**，只见结果。由 `BrokerServiceIT`/`HostEndToEndIT` 断言结果不含 `v_ro_`/`password`。\n- AC5 可解释：被拒时返回命中策略 + 原因。由 `CasbinPdpTest` 覆盖。\n\n## 4. 秒级吊销（AC6）\n\n```bash\n# 改策略为拒绝，计时到下一次查询被拒\ntime custos --token $TOKEN policy --content 'p, role:reader, default, tool:db/*, read, deny\ng, agent:claude-prod, role:reader, default'\n# 立即重发 query_db → 期望 {\"allowed\":false,...}；记录从改策略到被拒的延迟（应 ≤ 数秒）\n```\n\n**通过标准**：AC6 延迟 ≤ 数秒（记录 P95）。逻辑由 `RevocationViaWatcherTest`（内存控制面，毫秒级翻转）验证；\n真实 Nacos 推送由 `NacosControlPlaneSmokeIT` 在本 stack 起来后验证（见末尾）。\n\n## 5. 审计防篡改（AC7）\n\n> 每次 `query_db` 决策（allow/deny）都会写一条哈希链审计行（actor=agent、resource=tool，\n> 敏感原文/租约号经 HMAC 脱敏，绝不明文入库）；下面在已跑过若干查询后校验链。\n\n```bash\ncustos --token $TOKEN audit verify                 # {\"ok\":true,\"brokenAtSeq\":-1}\n# 手工改一条历史：UPDATE custos_audit SET action='write' WHERE seq=1;\ncustos --token $TOKEN audit verify                 # {\"ok\":false,\"brokenAtSeq\":1}\n```\n\n（实现/测试：`HashChainAuditLog` + `HashChainAuditLogIT`，已验证篡改即断链并定位 seq。）\n\n## 6. 落盘加密（AC2）\n\n```bash\ndocker exec -it <mysql> mysql -uroot -prootpwd -e \"SELECT HEX(svalue) FROM custos.custos_storage LIMIT 1\"\n```\n\n**通过标准**：均为密文；改一字节后读取报完整性失败。（`JimmerStorageIT` 断言落盘密文、`IntlSuiteAeadTest` 验证 GCM tag 篡改即 IntegrityException。）\n\n## 7. 一键起（AC8）\n\n`docker compose up` 起 Nacos+MySQL+Custos（compose 项目名 `custos-demo`），按上述脚本跑通即 AC8 通过。\n\n## 8. 真实 Claude 经 MCP 调 custos（secretless 全链路）\n\n拓扑：Claude 作为 MCP client 拉起**第二个 custos host**（stdio 传输，与容器实例共享同一\nMySQL 存储与 Nacos 控制面）。[mcp-custos.sh](mcp-custos.sh) 负责：进程 sealed 启动 →\n后台用 `.e2e-shares.json` 的同一组 Shamir 分片经 REST(:8090) 解封 → 签发 agent 令牌写\n`.e2e-local-jwt.txt`（agent 只拿令牌，永远见不到 DB 凭证）。\n\n- **交互式（Claude Code / Claude Desktop）**：把 [claude-mcp.json](claude-mcp.json) 的\n  `mcpServers.custos` 合入 MCP 配置（CLI：`claude --mcp-config examples/claude-mcp.json`），\n  然后让 Claude 读取令牌文件并调用 `query_db`。\n- **无交互冒烟**：`python examples/mcp_smoke_client.py \"SELECT id, amount FROM appdb.orders ORDER BY id\"`\n  —— 完整走 initialize → tools/list → tools/call。\n\n实测输出（2026-06-10）：握手 `custos-broker 0.1.0` → `rows=[{id=1, amount=100}, …]`、\n`rows=[{total=600}]`；两次决策以 `agent:claude-prod allow` 追加到共享审计链，\n容器实例 `audit verify` 校验跨 host 链完整（`ok:true`）。\n\n> 注：MCP server 支持 sealed 启动（握手/tools-list 可用，工具调用返回 SEALED 提示），\n> 解封后无需重启即可服务；stdio 模式下 banner/控制台日志已关闭以保 JSON-RPC 通道纯净。\n\n## 附：验证真实 Nacos 秒级推送（计划 4 的环境门控 IT）\n\nstack 起来后，本地对着 compose 暴露的 Nacos 跑：\n\n```bash\nNACOS_ADDR=127.0.0.1:8848 NACOS_USERNAME=nacos NACOS_PASSWORD=DemoPass123 \\\n  mvn -q -pl authz test -Dtest=NacosControlPlaneSmokeIT\n```\n\n期望 PASS（publish→get→subscribe 收到秒级变更推送）。无 `NACOS_ADDR` 时该 IT 自动跳过；\nNacos 3.x API 鉴权开启时必须带 `NACOS_USERNAME`/`NACOS_PASSWORD`。\n",
+          "mtime": "2026-06-10 23:28",
           "meta": {}
         }
       ],
@@ -1111,7 +1111,7 @@
       "field": "subtasks[M01-d8833f].title",
       "message": "title mixes languages outside project doc_language='en': 'T1 Maven 多模块脚手架 + CI + 冒烟'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1120,7 +1120,7 @@
       "field": "subtasks[M01-62cbd9].title",
       "message": "title mixes languages outside project doc_language='en': 'T2 IntlSuite AES-256-GCM（TDD）'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1129,7 +1129,7 @@
       "field": "subtasks[M01-e1f956].title",
       "message": "title mixes languages outside project doc_language='en': 'T4 ECDSA P-256 签名/验签'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1138,7 +1138,7 @@
       "field": "subtasks[M01-a96c6b].title",
       "message": "title mixes languages outside project doc_language='en': 'T5 Keyring + Barrier 封套'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1147,7 +1147,7 @@
       "field": "subtasks[M01-0c817d].title",
       "message": "title mixes languages outside project doc_language='en': 'T6 Shamir 分片封装'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1156,7 +1156,7 @@
       "field": "subtasks[M01-9e9360].title",
       "message": "title mixes languages outside project doc_language='en': 'T7 密钥层级 + Seal/Unseal'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1165,7 +1165,7 @@
       "field": "subtasks[M02-318af9].title",
       "message": "title mixes languages outside project doc_language='en': 'P2-T1 Jimmer 接入 + StorageEntry + JimmerStorage（IT）'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1174,7 +1174,7 @@
       "field": "subtasks[M02-59d807].title",
       "message": "title mixes languages outside project doc_language='en': 'P2-T2 SealConfigEntry + JimmerSealStore（IT）'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1183,7 +1183,7 @@
       "field": "subtasks[M02-85c59b].title",
       "message": "title mixes languages outside project doc_language='en': 'P2-T3 哈希链审计 HashChainAuditLog（IT）'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1192,7 +1192,7 @@
       "field": "subtasks[M02-d00598].title",
       "message": "title mixes languages outside project doc_language='en': 'P2-T4 租约 DefaultLeaseManager（IT）'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1201,7 +1201,7 @@
       "field": "subtasks[M02-bd97a9].title",
       "message": "title mixes languages outside project doc_language='en': 'P2-T5 动态 DB 凭证 DynamicDbCredentials（IT）'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1210,7 +1210,7 @@
       "field": "subtasks[M03-2fd2cd].title",
       "message": "title mixes languages outside project doc_language='en': 'P3-T1 identity 模块脚手架 + AgentId'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1219,7 +1219,7 @@
       "field": "subtasks[M03-06b226].title",
       "message": "title mixes languages outside project doc_language='en': 'P3-T2 TokenService 签发/校验 JWT ES256'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1228,7 +1228,7 @@
       "field": "subtasks[M03-9a3a20].title",
       "message": "title mixes languages outside project doc_language='en': 'P3-T3 吊销黑名单（valid-but-revoked 拒）'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1237,7 +1237,7 @@
       "field": "subtasks[M04-a9b43b].title",
       "message": "title mixes languages outside project doc_language='en': 'P4-T1 jCasbin RBAC 可解释 PDP'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1246,7 +1246,7 @@
       "field": "subtasks[M04-67c13f].title",
       "message": "title mixes languages outside project doc_language='en': 'P4-T2 ControlPlane + PolicyWatcher 秒级吊销'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1255,7 +1255,7 @@
       "field": "subtasks[M04-398be4].title",
       "message": "title mixes languages outside project doc_language='en': 'P4-T3 NacosControlPlane + 环境门控冒烟 IT'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1264,7 +1264,7 @@
       "field": "subtasks[M05-c84c3d].title",
       "message": "title mixes languages outside project doc_language='en': 'P5-T1 SecretlessQueryExecutor 只读执行（IT）'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1273,7 +1273,7 @@
       "field": "subtasks[M05-f49377].title",
       "message": "title mixes languages outside project doc_language='en': 'P5-T2 BrokerService PEP 编排（IT）'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1282,7 +1282,7 @@
       "field": "subtasks[M05-787b06].title",
       "message": "title mixes languages outside project doc_language='en': 'P5-T4 端到端 demo runbook（AC1–AC8）'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1291,7 +1291,7 @@
       "field": "subtasks[M06-037adf].title",
       "message": "title mixes languages outside project doc_language='en': 'PF-T1 SecretsEngine SPI + Registry + Broker 解耦'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1300,7 +1300,7 @@
       "field": "subtasks[M06-9dc392].title",
       "message": "title mixes languages outside project doc_language='en': 'PF-T2 custos-host 脚手架 + 配置绑定 + sealed 引导'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1309,7 +1309,7 @@
       "field": "subtasks[M06-f8a090].title",
       "message": "title mixes languages outside project doc_language='en': 'PF-T3 OperatorService 解封生命周期 + REST admin + Bearer'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1318,7 +1318,7 @@
       "field": "subtasks[M06-7dc576].title",
       "message": "title mixes languages outside project doc_language='en': 'PF-T4 policy/audit/query_db 端点（未解封 409、secretless）'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1327,7 +1327,7 @@
       "field": "subtasks[M06-a99219].title",
       "message": "title mixes languages outside project doc_language='en': 'PF-T6 端到端宿主 IT + compose 真跑 + demo 真命令'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1336,7 +1336,7 @@
       "field": "subtasks[M07-9b1206].title",
       "message": "title mixes languages outside project doc_language='en': 'OBO-T2 AgentScopeResolver + Sts + DefaultSts 交集'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1345,7 +1345,7 @@
       "field": "subtasks[M08-39cd2f].title",
       "message": "title mixes languages outside project doc_language='en': 'M08-T1 RBAC domain 多租户 + DecisionRequest/Decision 富化(effect+risk) + 回归'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1354,7 +1354,7 @@
       "field": "subtasks[M08-f5e4ed].title",
       "message": "title mixes languages outside project doc_language='en': 'M08-T2 AbacPolicy + RiskScorer SPI + 确定性 DefaultRiskScorer'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1363,7 +1363,7 @@
       "field": "subtasks[M08-6d9df3].title",
       "message": "title mixes languages outside project doc_language='en': 'M08-T3 ApprovalHook + AbacPdp 三态装饰链(越密级/风险分级/JIT)'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1372,7 +1372,7 @@
       "field": "subtasks[M09-914e6f].title",
       "message": "title mixes languages outside project doc_language='en': 'M09-T2 AkSkSecretsEngine（issue/revoke/rotate with grace）'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1381,7 +1381,7 @@
       "field": "subtasks[M10-1e4a9d].title",
       "message": "title mixes languages outside project doc_language='en': 'M10-T1 KvEngine 接口 + StorageKvEngine（版本化，纯单元）'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1390,7 +1390,7 @@
       "field": "subtasks[M10-dbf62a].title",
       "message": "title mixes languages outside project doc_language='en': 'M10-T2 PostgresDynamicCredentials（Testcontainers PG IT）'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1399,7 +1399,7 @@
       "field": "subtasks[M11-9291bb].title",
       "message": "title mixes languages outside project doc_language='en': 'M11-T0 JRaft API 源码核准 gate（gitee 克隆逐一核准并回写计划）'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1408,7 +1408,7 @@
       "field": "subtasks[M11-ab9a81].title",
       "message": "title mixes languages outside project doc_language='en': 'M11-T1 KvOp + 状态机 + Server/Client（单节点往返+快照+重启恢复）'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1417,7 +1417,7 @@
       "field": "subtasks[M11-e4ccf7].title",
       "message": "title mixes languages outside project doc_language='en': 'M11-T2 3 节点复制 + leader failover 测试'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1426,7 +1426,7 @@
       "field": "subtasks[M11-2a12ef].title",
       "message": "title mixes languages outside project doc_language='en': 'M11-T3 RaftStorage/RaftSealStore/RaftLeaseManager（leader-only sweeper）'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1435,7 +1435,7 @@
       "field": "subtasks[M12-529f5c].title",
       "message": "title mixes languages outside project doc_language='en': 'M12-T1 SpiffeId 解析/渲染（TDD）'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1444,7 +1444,7 @@
       "field": "subtasks[M12-fea5dc].title",
       "message": "title mixes languages outside project doc_language='en': 'M12-T2 X509SvidIssuer/Verifier（BC，过期/异CA/无SAN 负路径）'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1453,7 +1453,7 @@
       "field": "subtasks[M12-efac74].title",
       "message": "title mixes languages outside project doc_language='en': 'M12-T3 SpiffeAuthenticator（PEM → Principal）'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1462,7 +1462,7 @@
       "field": "subtasks[M13-8b56c3].title",
       "message": "title mixes languages outside project doc_language='en': 'M13-T1 sdk 模块：Properties + CustosClient + AutoConfiguration + imports'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1471,7 +1471,7 @@
       "field": "subtasks[M13-329999].title",
       "message": "title mixes languages outside project doc_language='en': 'M13-T2 CustosClient 请求形状测试（fake host）'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1480,7 +1480,7 @@
       "field": "subtasks[M13-9c6f03].title",
       "message": "title mixes languages outside project doc_language='en': 'M13-T3 CLI 补 query + operator seal 子命令'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1489,7 +1489,7 @@
       "field": "subtasks[M14-d03c65].title",
       "message": "title mixes languages outside project doc_language='en': 'M14-T1 GmSuite（BC）+ keyLength 适配 + GmSeal 集成测试'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1498,7 +1498,7 @@
       "field": "subtasks[M14-c7b5a3].title",
       "message": "title mixes languages outside project doc_language='en': 'M14-T2 Zeroize + Keyring.destroy（内存加固）'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1507,7 +1507,7 @@
       "field": "subtasks[M14-7108cc].title",
       "message": "title mixes languages outside project doc_language='en': 'M14-T3 bench 标签用例 + RUNBOOK + AUDIT-PREP 准备包'",
       "suggestion": "Rewrite in a single language matching project.doc_language · tech tokens like 'API' / 'MCP' / 'CLI' are whitelist-OK",
-      "reference": "docs-cockpit-author · §16.2 title style 黄金法则",
+      "reference": "references/schema.md · subtask title 4 法则",
       "category": "doc-lang-mix"
     },
     {
@@ -1515,8 +1515,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M01-engine-foundation.md",
       "field": "subtasks[M01-d8833f].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='T1 Maven 多模块脚手架 + CI + 冒烟'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M01` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1524,8 +1524,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M01-engine-foundation.md",
       "field": "subtasks[M01-62cbd9].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='T2 IntlSuite AES-256-GCM（TDD）'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M01` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1533,8 +1533,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M01-engine-foundation.md",
       "field": "subtasks[M01-6e8199].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='T3 SHA-256 + HMAC'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M01` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1542,8 +1542,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M01-engine-foundation.md",
       "field": "subtasks[M01-e1f956].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='T4 ECDSA P-256 签名/验签'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M01` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1551,8 +1551,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M01-engine-foundation.md",
       "field": "subtasks[M01-a96c6b].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='T5 Keyring + Barrier 封套'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M01` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1560,8 +1560,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M01-engine-foundation.md",
       "field": "subtasks[M01-0c817d].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='T6 Shamir 分片封装'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M01` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1569,8 +1569,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M01-engine-foundation.md",
       "field": "subtasks[M01-9e9360].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='T7 密钥层级 + Seal/Unseal'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M01` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1578,8 +1578,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M02-engine-persistence.md",
       "field": "subtasks[M02-318af9].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='P2-T1 Jimmer 接入 + StorageEntry + JimmerStorage（IT）'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M02` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1587,8 +1587,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M02-engine-persistence.md",
       "field": "subtasks[M02-59d807].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='P2-T2 SealConfigEntry + JimmerSealStore（IT）'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M02` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1596,8 +1596,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M02-engine-persistence.md",
       "field": "subtasks[M02-85c59b].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='P2-T3 哈希链审计 HashChainAuditLog（IT）'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M02` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1605,8 +1605,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M02-engine-persistence.md",
       "field": "subtasks[M02-d00598].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='P2-T4 租约 DefaultLeaseManager（IT）'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M02` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1614,8 +1614,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M02-engine-persistence.md",
       "field": "subtasks[M02-bd97a9].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='P2-T5 动态 DB 凭证 DynamicDbCredentials（IT）'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M02` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1623,8 +1623,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M03-identity-jwt.md",
       "field": "subtasks[M03-2fd2cd].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='P3-T1 identity 模块脚手架 + AgentId'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M03` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1632,8 +1632,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M03-identity-jwt.md",
       "field": "subtasks[M03-06b226].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='P3-T2 TokenService 签发/校验 JWT ES256'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M03` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1641,8 +1641,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M03-identity-jwt.md",
       "field": "subtasks[M03-9a3a20].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='P3-T3 吊销黑名单（valid-but-revoked 拒）'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M03` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1650,8 +1650,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M04-authz-nacos.md",
       "field": "subtasks[M04-a9b43b].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='P4-T1 jCasbin RBAC 可解释 PDP'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M04` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1659,8 +1659,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M04-authz-nacos.md",
       "field": "subtasks[M04-67c13f].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='P4-T2 ControlPlane + PolicyWatcher 秒级吊销'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M04` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1668,8 +1668,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M04-authz-nacos.md",
       "field": "subtasks[M04-398be4].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='P4-T3 NacosControlPlane + 环境门控冒烟 IT'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M04` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1677,8 +1677,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M05-broker-mcp-demo.md",
       "field": "subtasks[M05-c84c3d].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='P5-T1 SecretlessQueryExecutor 只读执行（IT）'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M05` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1686,8 +1686,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M05-broker-mcp-demo.md",
       "field": "subtasks[M05-f49377].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='P5-T2 BrokerService PEP 编排（IT）'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M05` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1695,8 +1695,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M05-broker-mcp-demo.md",
       "field": "subtasks[M05-0cb738].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='P5-T3 MCP query_db + Spring Boot app + docker-compose'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M05` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1704,8 +1704,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M05-broker-mcp-demo.md",
       "field": "subtasks[M05-787b06].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='P5-T4 端到端 demo runbook（AC1–AC8）'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M05` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1713,8 +1713,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M06-production-foundation.md",
       "field": "subtasks[M06-037adf].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='PF-T1 SecretsEngine SPI + Registry + Broker 解耦'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M06` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1722,8 +1722,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M06-production-foundation.md",
       "field": "subtasks[M06-9dc392].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='PF-T2 custos-host 脚手架 + 配置绑定 + sealed 引导'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M06` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1731,8 +1731,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M06-production-foundation.md",
       "field": "subtasks[M06-f8a090].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='PF-T3 OperatorService 解封生命周期 + REST admin + Bearer'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M06` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1740,8 +1740,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M06-production-foundation.md",
       "field": "subtasks[M06-7dc576].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='PF-T4 policy/audit/query_db 端点（未解封 409、secretless）'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M06` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1749,8 +1749,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M06-production-foundation.md",
       "field": "subtasks[M06-d03b68].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='PF-T5 MCP stdio runner + custos-cli'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M06` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1758,8 +1758,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M06-production-foundation.md",
       "field": "subtasks[M06-a99219].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='PF-T6 端到端宿主 IT + compose 真跑 + demo 真命令'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M06` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1767,8 +1767,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M07-obo.md",
       "field": "subtasks[M07-3ba260].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='OBO-T1 Principal + Authenticator + JwtAuthenticator + issueO'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M07` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1776,8 +1776,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M07-obo.md",
       "field": "subtasks[M07-9b1206].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='OBO-T2 AgentScopeResolver + Sts + DefaultSts 交集'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M07` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1785,8 +1785,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M08-abac.md",
       "field": "subtasks[M08-39cd2f].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='M08-T1 RBAC domain 多租户 + DecisionRequest/Decision 富化(effect+'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M08` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1794,8 +1794,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M08-abac.md",
       "field": "subtasks[M08-f5e4ed].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='M08-T2 AbacPolicy + RiskScorer SPI + 确定性 DefaultRiskScorer'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M08` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1803,8 +1803,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M08-abac.md",
       "field": "subtasks[M08-6d9df3].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='M08-T3 ApprovalHook + AbacPdp 三态装饰链(越密级/风险分级/JIT)'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M08` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1812,8 +1812,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M09-aksk-engine.md",
       "field": "subtasks[M09-71198b].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='M09-T1 AkSkPair + AkSkProvider SPI + InMemoryAkSkProvider'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M09` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1821,8 +1821,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M09-aksk-engine.md",
       "field": "subtasks[M09-914e6f].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='M09-T2 AkSkSecretsEngine（issue/revoke/rotate with grace）'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M09` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1830,8 +1830,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M10-kv-engine.md",
       "field": "subtasks[M10-1e4a9d].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='M10-T1 KvEngine 接口 + StorageKvEngine（版本化，纯单元）'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M10` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1839,8 +1839,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M10-kv-engine.md",
       "field": "subtasks[M10-dbf62a].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='M10-T2 PostgresDynamicCredentials（Testcontainers PG IT）'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M10` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1848,8 +1848,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M11-ha-raft.md",
       "field": "subtasks[M11-9291bb].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='M11-T0 JRaft API 源码核准 gate（gitee 克隆逐一核准并回写计划）'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M11` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1857,8 +1857,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M11-ha-raft.md",
       "field": "subtasks[M11-ab9a81].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='M11-T1 KvOp + 状态机 + Server/Client（单节点往返+快照+重启恢复）'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M11` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1866,8 +1866,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M11-ha-raft.md",
       "field": "subtasks[M11-e4ccf7].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='M11-T2 3 节点复制 + leader failover 测试'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M11` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1875,8 +1875,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M11-ha-raft.md",
       "field": "subtasks[M11-2a12ef].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='M11-T3 RaftStorage/RaftSealStore/RaftLeaseManager（leader-onl'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M11` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1884,8 +1884,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M12-spiffe-svid.md",
       "field": "subtasks[M12-529f5c].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='M12-T1 SpiffeId 解析/渲染（TDD）'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M12` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1893,8 +1893,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M12-spiffe-svid.md",
       "field": "subtasks[M12-fea5dc].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='M12-T2 X509SvidIssuer/Verifier（BC，过期/异CA/无SAN 负路径）'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M12` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1902,8 +1902,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M12-spiffe-svid.md",
       "field": "subtasks[M12-efac74].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='M12-T3 SpiffeAuthenticator（PEM → Principal）'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M12` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1911,8 +1911,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M13-sdk-starter.md",
       "field": "subtasks[M13-8b56c3].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='M13-T1 sdk 模块：Properties + CustosClient + AutoConfiguration '",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M13` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1920,8 +1920,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M13-sdk-starter.md",
       "field": "subtasks[M13-329999].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='M13-T2 CustosClient 请求形状测试（fake host）'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M13` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1929,8 +1929,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M13-sdk-starter.md",
       "field": "subtasks[M13-9c6f03].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='M13-T3 CLI 补 query + operator seal 子命令'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M13` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1938,8 +1938,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M14-hardening.md",
       "field": "subtasks[M14-d03c65].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='M14-T1 GmSuite（BC）+ keyLength 适配 + GmSeal 集成测试'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M14` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1947,8 +1947,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M14-hardening.md",
       "field": "subtasks[M14-c7b5a3].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='M14-T2 Zeroize + Keyring.destroy（内存加固）'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M14` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     },
     {
@@ -1956,8 +1956,8 @@
       "path": "D:\\harvey_work\\custos\\docs\\spec\\module\\M14-hardening.md",
       "field": "subtasks[M14-7108cc].anchors",
       "message": "subtask 既无 @code: 也无 @docs: annotation · LLM 跟用户都拉不到上下文 · title='M14-T3 bench 标签用例 + RUNBOOK + AUDIT-PREP 准备包'",
-      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M · 或跑 `docs-cockpit verify M14` 让 LLM 帮你诊断 + 建议补什么 anchor",
-      "reference": "docs-cockpit-author · §16.6 anchor 完整性 SOP + LLM verify",
+      "suggestion": "在 body checklist 行末加 @code:path/file.py:N-M 跟 / 或 @docs:path.md#§N.M",
+      "reference": "references/schema.md · code anchor 格式 + doc anchor 格式",
       "category": "subtask-missing-anchors"
     }
   ]
