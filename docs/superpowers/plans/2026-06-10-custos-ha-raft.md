@@ -46,7 +46,17 @@ git clone --depth 1 https://gitee.com/sofastack/sofa-jraft research/sofa-jraft
 7. leader 判定：`node.isLeader()`；
 8. 多节点进程内组网：同 JVM 多 `RaftGroupService` 不同端口/数据目录是否受支持（官方 test 用法）。
 
-- [ ] **Step 2: 把核准差异回写本计划（Edit 本文件），然后才进 Task 1**
+- [x] **Step 2: 把核准差异回写本计划（Edit 本文件），然后才进 Task 1**
+
+> **核准结果（2026-06-10，gitee.com/sofastack/sofa-jraft@master）**：
+> - 版本：**用 1.4.0**（Central 在档，dependency:get 验证通过；计划原写 1.3.14 作废）。
+> - `RaftGroupService(String groupId, PeerId serverId, NodeOptions)` + `start()` → `Node` ✓
+> - `NodeOptions`：`setFsm/setLogUri/setRaftMetaUri/setSnapshotUri/setInitialConf(Configuration)/setElectionTimeoutMs` ✓
+> - `Node.apply(Task)`、`Node.isLeader()` ✓；`Task(ByteBuffer data, Closure done)` ✓；`Closure.run(Status)` ✓
+> - `StateMachine.onSnapshotSave(SnapshotWriter, Closure)` / `onSnapshotLoad(SnapshotReader): boolean`；`SnapshotWriter.addFile(String, Message)`；`onLeaderStart(long term)`（leader-only sweeper 钩子）✓
+> - `JRaftUtils.getConfiguration("ip:port,...")` / `getPeerId("ip:port")` ✓
+> - `Iterator extends java.util.Iterator<ByteBuffer>`，`getData()/done()` ✓
+> - 进程内多节点：jraft-core 自测即此用法，不同端口 + 各自数据目录即可。
 
 - [ ] **Step 3: 提交计划修正**
 ```bash
