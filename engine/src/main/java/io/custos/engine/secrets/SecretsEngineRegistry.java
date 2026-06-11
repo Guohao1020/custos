@@ -12,6 +12,11 @@ public final class SecretsEngineRegistry {
         mounts.put(name, engine);
     }
 
+    /** 卸载某 mount 名(资源注销时调用);不存在则静默忽略。 */
+    public void unmount(String name) {
+        mounts.remove(name);
+    }
+
     public SecretsEngine require(String name) {
         SecretsEngine e = mounts.get(name);
         if (e == null) throw new IllegalArgumentException("no secrets engine mounted at: " + name);
