@@ -44,7 +44,8 @@ public final class McpQueryToolServer {
                     .build();
         }
         QueryResult r = b.queryDb(
-                new QueryIntent((String) args.get("tool"), (String) args.get("schema"), (String) args.get("sql")),
+                new QueryIntent((String) args.get("tool"), (String) args.get("resource"),
+                        (String) args.getOrDefault("role", "read-only"), (String) args.get("sql")),
                 (String) args.get("userToken"));
         String text = r.allowed() ? ("rows=" + r.rows()) : ("DENIED: " + r.denyReason());
         return McpSchema.CallToolResult.builder()
@@ -59,10 +60,11 @@ public final class McpQueryToolServer {
                 "type", "object",
                 "properties", Map.of(
                         "tool", Map.of("type", "string"),
-                        "schema", Map.of("type", "string"),
+                        "resource", Map.of("type", "string"),
+                        "role", Map.of("type", "string"),
                         "sql", Map.of("type", "string"),
                         "userToken", Map.of("type", "string")),
-                "required", List.of("tool", "schema", "sql", "userToken"));
+                "required", List.of("tool", "resource", "sql", "userToken"));
 
         McpSchema.Tool tool = McpSchema.Tool.builder("query_db", inputSchema)
                 .description("对受治理只读库执行 SELECT，返回结果（凭证不出库）")

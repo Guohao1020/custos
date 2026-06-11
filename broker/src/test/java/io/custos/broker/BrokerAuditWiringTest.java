@@ -4,8 +4,13 @@ import io.custos.authz.CasbinPdp;
 import io.custos.engine.audit.AuditLog;
 import io.custos.engine.audit.AuditRecord;
 import io.custos.engine.audit.VerifyResult;
-import io.custos.engine.secrets.IssuedCred;
-import io.custos.engine.secrets.SecretsEngine;
+import io.custos.engine.lease.Lease;
+import io.custos.engine.lease.LeaseManager;
+import io.custos.engine.lease.Revoker;
+import io.custos.engine.resource.ResourceManager;
+import io.custos.engine.resource.ResourceStore;
+import io.custos.engine.secrets.SecretsEngineRegistry;
+import io.custos.engine.storage.Storage;
 import io.custos.identity.AgentId;
 import io.custos.identity.InMemoryBlacklist;
 import io.custos.identity.JwtTokenService;
@@ -16,7 +21,10 @@ import java.security.KeyPairGenerator;
 import java.security.spec.ECGenParameterSpec;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -27,6 +35,9 @@ import static org.junit.jupiter.api.Assertions.*;
  * <p>守护一个真实出现过的接线缺口：app 装配 BrokerService 时漏传 AuditLog，
  * 导致所有 secret 访问决策都没写审计，与"防篡改审计"核心卖点相悖。
  * （allow 路径需真实 DB，由 {@code BrokerServiceIT} 覆盖。）
+ *
+ * <p>deny 路径不触达 {@code resources.require}，故传一个不挂任何资源的最小 ResourceManager 即可：
+ * 内存 Storage 假实现 + 抛错占位 LeaseManager（都不会被 deny 路径调到）。
  */
 class BrokerAuditWiringTest {
 
@@ -37,11 +48,27 @@ class BrokerAuditWiringTest {
         public VerifyResult verify() { return VerifyResult.passed(); }
     }
 
-    /** deny 路径不会触达，故签发/撤销均抛错以证明确未被调用。 */
-    static final class UnreachableSecretsEngine implements SecretsEngine {
-        public String type() { return "unreachable"; }
-        public IssuedCred issue(String path, Duration ttl) { throw new AssertionError("deny 路径不应签发凭证"); }
-        public void revoke(String leaseId) { throw new AssertionError("deny 路径不应撤销凭证"); }
+    /** 内存 Storage 假实现（deny 路径不触达资源解析，故内部不需真 DB）。 */
+    static final class MemStorage implements Storage {
+        final Map<String, byte[]> m = new LinkedHashMap<>();
+        public Optional<byte[]> get(String k) { return Optional.ofNullable(m.get(k)); }
+        public void put(String k, byte[] v) { m.put(k, v.clone()); }
+        public void delete(String k) { m.remove(k); }
+        public List<String> list(String prefix) { return m.keySet().stream().filter(s -> s.startsWith(prefix)).sorted().toList(); }
+    }
+
+    /** deny 路径不会触达租约，故任何调用都抛错以证明确未被调用。 */
+    static final class UnreachableLeaseManager implements LeaseManager {
+        public Lease register(String resourcePath, Duration ttl, Revoker revoker) { throw new AssertionError("deny 路径不应登记租约"); }
+        public Lease renew(String leaseId, Duration increment) { throw new AssertionError("deny 路径不应续约"); }
+        public void revoke(String leaseId) { throw new AssertionError("deny 路径不应撤销"); }
+        public int revokePrefix(String prefix) { throw new AssertionError("deny 路径不应批量撤销"); }
+    }
+
+    /** 最小 ResourceManager：不挂任何资源，deny 路径不会 require 到它。 */
+    private ResourceManager minimalResources() {
+        return new ResourceManager(new ResourceStore(new MemStorage()), new SecretsEngineRegistry(),
+                new UnreachableLeaseManager(), null);
     }
 
     private TokenService tokens() throws Exception {
@@ -65,8 +92,8 @@ class BrokerAuditWiringTest {
     void deniedDecisionWritesAuditRow() throws Exception {
         TokenService tokens = tokens();
         CapturingAudit audit = new CapturingAudit();
-        BrokerService broker = new BrokerService(tokens, denyAllPdp(), new UnreachableSecretsEngine(),
-                new SecretlessQueryExecutor(), "jdbc:unused", audit);
+        BrokerService broker = new BrokerService(tokens, denyAllPdp(), minimalResources(),
+                new SecretlessQueryExecutor(), audit);
 
         QueryResult r = broker.queryDb(
                 new QueryIntent("db/query_orders", "appdb", "SELECT 1"),
@@ -84,8 +111,8 @@ class BrokerAuditWiringTest {
     @Test
     void nullAuditDoesNotThrow() throws Exception {
         TokenService tokens = tokens();
-        BrokerService broker = new BrokerService(tokens, denyAllPdp(), new UnreachableSecretsEngine(),
-                new SecretlessQueryExecutor(), "jdbc:unused");   // 无审计构造器
+        BrokerService broker = new BrokerService(tokens, denyAllPdp(), minimalResources(),
+                new SecretlessQueryExecutor(), null);   // 无审计
 
         QueryResult r = broker.queryDb(
                 new QueryIntent("db/query_orders", "appdb", "SELECT 1"),
