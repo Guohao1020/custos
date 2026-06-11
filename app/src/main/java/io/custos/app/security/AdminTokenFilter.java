@@ -14,6 +14,12 @@ public final class AdminTokenFilter implements Filter {
     @Override
     public void doFilter(ServletRequest req, ServletResponse res, FilterChain chain) throws IOException, ServletException {
         HttpServletRequest r = (HttpServletRequest) req;
+        // CORS 预检（OPTIONS）必须在鉴权前直接放行：预检不带 Authorization，交由 Spring CORS 处理回带头，
+        // 否则会被下面的 adminPath 判定拦成 401，浏览器永远拿不到 Access-Control-Allow-Origin。
+        if ("OPTIONS".equalsIgnoreCase(r.getMethod())) {
+            chain.doFilter(req, res);
+            return;
+        }
         String path = r.getRequestURI();
         boolean adminPath = path.startsWith("/operator") || path.startsWith("/policy")
                 || path.startsWith("/audit") || path.startsWith("/resources") || path.startsWith("/token")

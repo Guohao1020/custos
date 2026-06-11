@@ -9,6 +9,7 @@ public class CustosProperties {
     private Nacos nacos = new Nacos();
     private Identity identity = new Identity();
     private Broker broker = new Broker();
+    private Console console = new Console();
 
     public static class Engine {
         private String storageUrl = "jdbc:mysql://localhost:3306/custos";
@@ -41,8 +42,14 @@ public class CustosProperties {
         public String getDbReadonlySchema() { return dbReadonlySchema; } public void setDbReadonlySchema(String v) { dbReadonlySchema = v; }
         public String getTargetJdbcUrl() { return targetJdbcUrl; } public void setTargetJdbcUrl(String v) { targetJdbcUrl = v; }
     }
+    public static class Console {
+        /** 允许跨域的 console 源（逗号分隔多个；默认 dev 的 Vite 5173 + compose 的 3000）。 */
+        private String origin = "http://localhost:5173,http://localhost:3000";
+        public String getOrigin() { return origin; } public void setOrigin(String v) { origin = v; }
+    }
     public Engine getEngine() { return engine; } public void setEngine(Engine v) { engine = v; }
     public Nacos getNacos() { return nacos; } public void setNacos(Nacos v) { nacos = v; }
     public Identity getIdentity() { return identity; } public void setIdentity(Identity v) { identity = v; }
     public Broker getBroker() { return broker; } public void setBroker(Broker v) { broker = v; }
+    public Console getConsole() { return console; } public void setConsole(Console v) { console = v; }
 }
