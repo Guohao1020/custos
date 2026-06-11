@@ -1,0 +1,144 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="980" viewBox="0 0 1600 980" role="img" aria-labelledby="title desc">
+  <title id="title">Custos 详细架构</title>
+  <desc id="desc">Custos 架构图，展示消费者、接入层、Host 服务、身份、授权、经纪层执行、引擎内核、Nacos 控制面、存储、审计与受保护资源。</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#f7fbff"/>
+      <stop offset="0.45" stop-color="#fbfcff"/>
+      <stop offset="1" stop-color="#f5fff8"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#0f172a" flood-opacity="0.11"/>
+    </filter>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#315b82"/>
+    </marker>
+    <marker id="arrowGray" markerWidth="12" markerHeight="12" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#7c8da0"/>
+    </marker>
+    <style>
+      .title{font:700 38px Inter,Segoe UI,Microsoft YaHei,Arial,sans-serif;fill:#102033}
+      .subtitle{font:500 18px Inter,Segoe UI,Microsoft YaHei,Arial,sans-serif;fill:#526171}
+      .section{font:700 21px Inter,Segoe UI,Microsoft YaHei,Arial,sans-serif;fill:#102033}
+      .label{font:700 16px Inter,Segoe UI,Microsoft YaHei,Arial,sans-serif;fill:#13243a}
+      .small{font:500 13px Inter,Segoe UI,Microsoft YaHei,Arial,sans-serif;fill:#526171}
+      .tiny{font:500 12px Inter,Segoe UI,Microsoft YaHei,Arial,sans-serif;fill:#64748b}
+      .panel{fill:#ffffff;stroke:#d9e5ef;stroke-width:1.3;rx:18;filter:url(#shadow)}
+      .subpanel{fill:#f8fbff;stroke:#c7d7e8;stroke-width:1.1;rx:14}
+      .kernel{fill:#f3fff6;stroke:#add9b7;stroke-width:1.2;rx:14}
+      .control{fill:#fff8ed;stroke:#ead0a5;stroke-width:1.2;rx:14}
+      .resource{fill:#f7f3ff;stroke:#d5c6f2;stroke-width:1.2;rx:14}
+      .storage{fill:#f6f8fb;stroke:#cbd5e1;stroke-width:1.2;rx:14}
+      .warn{fill:#fff7f3;stroke:#efc4ad;stroke-width:1.2;rx:14}
+      .line{fill:none;stroke:#315b82;stroke-width:2.2;marker-end:url(#arrow)}
+      .softline{fill:none;stroke:#7c8da0;stroke-width:1.7;stroke-dasharray:7 7;marker-end:url(#arrowGray)}
+      .guard{fill:#102033;rx:16}
+    </style>
+  </defs>
+
+  <rect width="1600" height="980" fill="url(#bg)"/>
+  <text x="64" y="72" class="title">Custos 架构：面向 AI Agent 的安全执行平面</text>
+  <text x="64" y="108" class="subtitle">围绕 Nacos 发现与控制，提供身份、策略决策、secretless 执行、密文存储与防篡改审计。</text>
+
+  <rect x="54" y="160" width="250" height="560" class="panel"/>
+  <text x="84" y="204" class="section">调用方</text>
+  <rect x="84" y="238" width="190" height="54" class="subpanel"/>
+  <text x="119" y="271" class="label">Claude / Codex</text>
+  <rect x="84" y="314" width="190" height="54" class="subpanel"/>
+  <text x="119" y="347" class="label">自治 Agent</text>
+  <rect x="84" y="390" width="190" height="54" class="subpanel"/>
+  <text x="116" y="423" class="label">Spring 服务</text>
+  <rect x="84" y="466" width="190" height="54" class="subpanel"/>
+  <text x="132" y="499" class="label">管理员</text>
+  <text x="84" y="594" class="tiny">Agent 永远拿不到凭证。</text>
+  <text x="84" y="618" class="tiny">只接收结果与决策信息。</text>
+
+  <rect x="370" y="160" width="250" height="560" class="panel"/>
+  <text x="400" y="204" class="section">接入层</text>
+  <rect x="400" y="238" width="190" height="54" class="subpanel"/>
+  <text x="456" y="271" class="label">MCP stdio</text>
+  <rect x="400" y="314" width="190" height="54" class="subpanel"/>
+  <text x="461" y="347" class="label">REST API</text>
+  <rect x="400" y="390" width="190" height="54" class="subpanel"/>
+  <text x="437" y="423" class="label">Java Starter</text>
+  <rect x="400" y="466" width="190" height="54" class="subpanel"/>
+  <text x="437" y="499" class="label">CLI / Console</text>
+  <text x="400" y="594" class="tiny">sealed 状态仅开放 operator</text>
+  <text x="400" y="618" class="tiny">解封相关端点。</text>
+
+  <rect x="690" y="132" width="480" height="624" class="panel"/>
+  <text x="730" y="178" class="section">Custos Host</text>
+  <text x="730" y="205" class="small">Spring Boot 运行时；默认 sealed；通过 Shamir 阈值分片解封。</text>
+
+  <rect x="730" y="238" width="178" height="88" class="subpanel"/>
+  <text x="792" y="268" class="label">身份层</text>
+  <text x="752" y="291" class="tiny">JWT ES256、OBO</text>
+  <text x="752" y="311" class="tiny">SPIFFE X.509 SVID</text>
+
+  <rect x="952" y="238" width="178" height="88" class="subpanel"/>
+  <text x="995" y="268" class="label">策略 PDP</text>
+  <text x="974" y="291" class="tiny">RBAC + domain</text>
+  <text x="974" y="311" class="tiny">ABAC、JIT 审批</text>
+
+  <rect x="730" y="360" width="178" height="88" class="subpanel"/>
+  <text x="783" y="390" class="label">经纪 PEP</text>
+  <text x="752" y="413" class="tiny">secretless query_db</text>
+  <text x="752" y="433" class="tiny">只读 SQL 约束</text>
+
+  <rect x="952" y="360" width="178" height="88" class="subpanel"/>
+  <text x="1005" y="390" class="label">审批流</text>
+  <text x="974" y="413" class="tiny">待审批队列</text>
+  <text x="974" y="433" class="tiny">approve / deny</text>
+
+  <rect x="730" y="492" width="400" height="214" class="kernel"/>
+  <text x="762" y="530" class="section">引擎内核</text>
+  <text x="762" y="570" class="small">Barrier 加密与 Keyring</text>
+  <text x="762" y="600" class="small">Shamir 分片 Seal / Unseal</text>
+  <text x="762" y="630" class="small">租约管理与撤销</text>
+  <text x="762" y="660" class="small">AK/SK、KV、动态 DB 凭证</text>
+  <text x="762" y="690" class="small">哈希链审计与国密 / 国际密码套件</text>
+
+  <rect x="1250" y="132" width="280" height="278" class="control"/>
+  <text x="1284" y="178" class="section">Nacos 3.2 控制面</text>
+  <rect x="1284" y="212" width="210" height="42" class="control"/>
+  <text x="1345" y="239" class="label">策略配置</text>
+  <rect x="1284" y="270" width="210" height="42" class="control"/>
+  <text x="1318" y="297" class="label">MCP / AI 注册</text>
+  <rect x="1284" y="328" width="210" height="42" class="control"/>
+  <text x="1337" y="355" class="label">服务发现</text>
+
+  <rect x="1250" y="478" width="280" height="278" class="resource"/>
+  <text x="1284" y="524" class="section">受保护资源</text>
+  <rect x="1284" y="558" width="210" height="42" class="resource"/>
+  <text x="1360" y="585" class="label">数据库</text>
+  <rect x="1284" y="616" width="210" height="42" class="resource"/>
+  <text x="1336" y="643" class="label">AK / SK API</text>
+  <rect x="1284" y="674" width="210" height="42" class="resource"/>
+  <text x="1338" y="701" class="label">内部工具</text>
+
+  <rect x="690" y="820" width="390" height="98" class="storage"/>
+  <text x="724" y="858" class="section">存储后端</text>
+  <text x="724" y="889" class="small">MySQL 存储密文、seal 配置、资源、租约、审批与审计行。</text>
+
+  <rect x="1120" y="820" width="410" height="98" class="warn"/>
+  <text x="1154" y="858" class="section">硬边界</text>
+  <text x="1154" y="889" class="small">明文密钥不进入 LLM、API 响应、日志或 Nacos。</text>
+
+  <path d="M304 418 C332 418 346 418 370 418" class="line"/>
+  <path d="M620 418 C652 418 664 418 690 418" class="line"/>
+  <path d="M908 282 C930 282 930 282 952 282" class="line"/>
+  <path d="M819 326 C819 342 819 344 819 360" class="line"/>
+  <path d="M1041 326 C1041 342 1041 344 1041 360" class="line"/>
+  <path d="M819 448 C819 468 819 472 819 492" class="line"/>
+  <path d="M1041 448 C1041 468 1041 472 1041 492" class="line"/>
+  <path d="M1130 600 C1180 600 1200 579 1250 579" class="line"/>
+  <path d="M1130 650 C1194 650 1200 637 1250 637" class="line"/>
+  <path d="M1130 544 C1194 544 1200 234 1250 234" class="softline"/>
+  <path d="M1130 282 C1194 282 1200 292 1250 292" class="softline"/>
+  <path d="M930 706 C930 760 885 766 885 820" class="softline"/>
+  <path d="M1068 706 C1148 760 1280 760 1325 820" class="softline"/>
+
+  <rect x="168" y="788" width="420" height="78" class="guard"/>
+  <text x="202" y="820" style="font:700 18px Inter,Segoe UI,Microsoft YaHei,Arial,sans-serif;fill:#fff">执行不变量</text>
+  <text x="202" y="849" style="font:500 15px Inter,Segoe UI,Microsoft YaHei,Arial,sans-serif;fill:#dbeafe">鉴权 -> 签发短时凭证 -> 执行 -> 撤销 -> 审计</text>
+</svg>

@@ -1,173 +1,220 @@
-# Custos · Agent 身份·密钥·权限统一引擎
+# Custos
 
-> **Nacos 原生、自托管、面向 AI Agent 的「身份·密钥·权限」统一引擎。**
+> Nacos-native, self-hosted **identity, secrets, and authorization** engine for AI agents.
 
-![license](https://img.shields.io/badge/license-Apache--2.0-blue) ![java](https://img.shields.io/badge/Java-21-orange) ![nacos](https://img.shields.io/badge/Nacos-3.2-green)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](#license)
+[![Java](https://img.shields.io/badge/Java-21-orange)](pom.xml)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3-6DB33F)](app/pom.xml)
+[![Nacos](https://img.shields.io/badge/Nacos-3.2-green)](examples/docker-compose.yml)
+[![MCP](https://img.shields.io/badge/MCP-secretless-0F766E)](examples/demo.md)
 
-Custos（拉丁语「守护者」）借鉴 Vault/OpenBao 的赛道，但**密钥引擎 100% 自研**、**Nacos 作控制面**、支持**国密**、**Apache-2.0** 开源。Java 21 · Maven 多模块。一键 `docker compose up` 起的就是产品完全体，目标企业内部生产级使用。
+**Languages:** English | [简体中文](README.zh-CN.md)
 
----
+Custos is a security execution plane for AI agents before they touch enterprise resources. It verifies identity, evaluates policy, mints short-lived credentials on demand, executes secretless operations, and writes every decision to a tamper-evident audit chain. Agents and LLMs receive only results, never database passwords, AK/SK pairs, connection strings, or lease internals.
 
-## 产品主线：Nacos AI 栈的安全执行平面
+![Custos architecture](docs/assets/readme/custos-architecture.png)
 
-Nacos 3.2 AI 管理中心做的是**发现**（谁有什么 MCP 工具 / Agent / Skill），它本身不含鉴权、密钥、审计——这正是 Custos 的全部本事。二者是天然搭档：
+## Why Custos
 
-> **Nacos AI 中心 = 注册发现平面；Custos = 安全执行平面（PEP + 密钥 + 审计）。**
-> 关系类比 Nacos（注册）+ Sentinel（流控）—— 现在是 Nacos（AI 发现）+ Custos（AI 管控）。
+The Nacos 3.2 AI management center is strong at discovery: agents, MCP tools, skills, and service instances. Custos completes the execution-side security loop.
 
-经 Nacos 发现的每一次 Agent↔资源、Agent↔Agent 调用，都先过 Custos：鉴权 → 签即用即焚凭证 → 落审计。
-
----
-
-## 30 秒快速起
-
-```bash
-docker compose -f examples/docker-compose.yml up -d --build   # MySQL + Nacos 3.2 + custos
-# 解封 + 一次查询见 examples/demo.md 的 AC1 / AC4
-```
-
-起来的是全容器栈（MySQL + Nacos 3.2 + custos-host）。host **sealed 启动**，提交满阈值的 Shamir 分片（默认 5/3）解封后才装配引擎；随后一次 `query_db` 全程 secretless。完整 e2e 验收 runbook（AC1–AC8）见 [examples/demo.md](examples/demo.md)，开发约定见 [CLAUDE.md](CLAUDE.md)。
-
----
-
-## 架构
-
-模块依赖（自研引擎在最内核，向外是身份/策略/经纪，再向外是宿主/CLI/SDK）：
-
-```
-                         ┌─────────── Nacos 控制面 ───────────┐
-                         │  custos-policy 配置 + gRPC 秒级热推  │
-                         │  （实测策略翻转到拒绝 ~275ms）       │
-                         └───────────────┬────────────────────┘
-                                         │ reload
-engine ← identity/authz ← broker ← app(custos-host) / cli / sdk
-  │          │       │       │
-  密钥引擎    身份     PDP     PEP
- (Barrier/   (per-   (RBAC+  (现场签发即用即焚凭证)
-  Seal/审计) session) ABAC)
-```
-
-**一次 `query_db` 的 secretless 路径**（broker = PEP）：
-
-```
-token 校验 (JWT ES256)
-   → PDP 决策 (Casbin RBAC+domain，ABAC 三态 ALLOW/DENY/REQUIRE_APPROVAL)
-   → 现场签发 v_ro_*（CREATE USER + GRANT SELECT）
-   → 只读执行（仅单条 SELECT/WITH）
-   → finally DROP USER（即用即焚）
-   → 每次决策 append 哈希链审计
-```
-
-凭证从不出现在返回值、日志或 LLM 上下文里。
-
----
-
-## 能力矩阵
-
-诚实标注，数据取自 [docs/ROADMAP.md](docs/ROADMAP.md)。✅ 已交付、可演示；🔜 下一阶段；📋 规划。
-
-| 能力 | 状态 |
+| Question | Custos answer |
 |---|---|
-| 自研密钥引擎（Barrier / Seal-Unseal / 密钥层级 / 租约） | ✅ 已交付 |
-| 身份层（per-session 身份 / JWT ES256 / OBO 委托） | ✅ 已交付 |
-| 权限层（jCasbin RBAC+domain + ABAC 三态 + 可解释 PDP） | ✅ 已交付 |
-| 经纪层（secretless PEP / 动态 DB 凭证 / 即用即焚） | ✅ 已交付 |
-| AK·SK secrets engine（签发 / 撤销 / 轮换） | ✅ 已交付 |
-| KV engine | ✅ 已交付 |
-| SPIFFE/SPIRE 工作负载身份（X.509 SVID） | ✅ 已交付 |
-| Java SDK（Spring Boot Starter） | ✅ 已交付 |
-| 国密套件（SM4-GCM/SM3/SM2，CipherSuite 一键切换） | ✅ 已交付 |
-| 防篡改哈希链审计 | ✅ 已交付 |
-| 全容器栈 e2e（AC1–AC8 真跑通） | ✅ 已交付 |
-| 资源接入（资源注册表 + 高权限密钥 Barrier 托管 + 多 DB 方言） | 🔜 v0.5 |
-| 多引擎经 MCP 多工具暴露（AK·SK / KV / PG） | 🔜 v0.5 |
-| custos MCP server 注册进 Nacos 3.2 AI 管理中心 | 🔜 v0.5 |
-| 真 Claude/Codex 端到端实证 + 进 CI | 🔜 v0.5 |
-| Python SDK | 🔜 v0.5 |
-| Admin Console（审计链浏览器 + 实时监控 + 运维动作） | 📋 v0.6 |
-| 可观测（Prometheus metrics / 结构化日志 / tracing） | 📋 v0.6 |
-| HA 集群（协调优先靠 Nacos，Raft 留 seal/storage 复制） | 📋 v0.7 |
-| A2A PEP（治理 Agent↔Agent 调用） | 📋 v0.7 |
-| 生产加固（G1–G6 消除 / TLS / 外部安全审计） | 📋 v1.0 |
+| How does an agent prove its identity? | Per-session identity, JWT ES256, OBO delegation, SPIFFE/SVID capabilities |
+| Who can call which tool or resource? | jCasbin RBAC + domain, ABAC tri-state decisions, REQUIRE_APPROVAL workflow |
+| Can an agent see secrets? | No. The broker mints burn-after-use credentials and returns only business results |
+| How fast does policy revocation take effect? | Policy is delivered through Nacos config + gRPC hot push; measured revocation is about 275ms |
+| How do we investigate later? | Every allow/deny decision is appended to a hash-chain audit log; tampering breaks at a precise seq |
+| Does it depend on Vault/OpenBao code? | No. The key engine is 100% self-authored; design ideas are studied, code is not copied |
 
----
+## Features
 
-## 模块状态
+| Capability | Status |
+|---|---|
+| Self-authored key engine: Barrier, Seal/Unseal, Keyring, Lease, Revocation | Done |
+| Shamir 5/3 unseal; host starts sealed by default | Done |
+| AES-256-GCM/SHA-256/ECDSA-P256 international suite and SM4-GCM/SM3/SM2 GM suite | Done |
+| JWT identity, OBO delegation, SPIFFE X.509 SVID | Done |
+| RBAC + domain, ABAC tri-state decisions, explainable PDP | Done |
+| Secretless DB query: broker creates `v_ro_*` read-only accounts and drops them in `finally` | Done |
+| Resource registry: Barrier-managed admin credentials, masked list responses, credential rotation | Done |
+| AK/SK secrets engine and KV engine | Done |
+| Tamper-evident hash-chain audit | Done |
+| REST host, MCP stdio server, CLI, Spring Boot Starter, Vue Admin Console | Done |
+| Register Custos MCP server into Nacos AI management center | Roadmap v0.5 |
+| Multi-host discovery, Prometheus/Tracing, namespace multi-tenant demo | Roadmap v0.6 |
+| A2A PEP, production HA, external security audit closure | Roadmap v0.7+ |
 
-完整模块看板（M01–M14 逐卡 + 关联 spec/plan/code）见 [docs/cockpit.html](docs/cockpit.html)。
+[docs/ROADMAP.md](docs/ROADMAP.md) is the source of truth for delivered and planned capabilities. This README marks shipped capabilities as Done and future work as Roadmap.
 
----
+## Quickstart
 
-## 接入
+Prerequisites:
 
-### MCP
+- Docker / Docker Compose
+- Java 21
+- Maven 3.9+
+- Node.js 20+, only needed for `console/`
 
-custos-host 经 `custos.transport.mcp-stdio=true` 暴露 `query_db` 工具。客户端配置见 [examples/claude-mcp.json](examples/claude-mcp.json)，全链路冒烟：
+Start the full stack:
 
 ```bash
-python examples/mcp_smoke_client.py "SELECT 1"
+docker compose -f examples/docker-compose.yml up -d --build
 ```
 
-进程 sealed 启动，工具调用未解封返回 SEALED 错误；冒烟脚本自动解封后再签令牌发起查询。
+This starts:
 
-### Java SDK
+| Service | URL / Port | Notes |
+|---|---:|---|
+| Custos host | `http://localhost:8080` | REST API, sealed on boot |
+| Nacos API | `localhost:8848` | API auth enabled |
+| Nacos console / AI center | `http://localhost:8081` | `nacos` / `DemoPass123` |
+| MySQL | `localhost:3306` | `custos` / `custospwd` |
 
-引入 `custos-spring-boot-starter`，经 `custos.client.*` 配置目标 host，自动装配 `CustosClient`：
+Build the CLI:
+
+```bash
+mvn -pl cli -am -DskipTests package
+```
+
+Then follow [examples/demo.md](examples/demo.md). The runbook covers AC1-AC9: sealed boot, threshold unseal, encrypted-at-rest storage, dynamic DB credentials, secretless result flow, explainable deny, Nacos policy revocation, audit verification, and Barrier-managed resource admin credentials.
+
+## Secretless Flow
+
+![Secretless query flow](docs/assets/readme/secretless-flow.png)
+
+At runtime, `query_db` follows one narrow path:
+
+```text
+JWT verify
+  -> PDP decision: RBAC + domain + ABAC
+  -> issue temporary v_ro_* credential
+  -> execute one SELECT / WITH statement
+  -> revoke credential in finally
+  -> append hash-chain audit record
+```
+
+Security invariants:
+
+- Secrets never enter the LLM context.
+- Secrets never appear in API responses.
+- Secrets never go to Nacos.
+- Resource admin credentials are encrypted by the Custos Barrier before storage.
+- Audit records form a hash chain; tampering is detected at the broken seq.
+
+## Architecture
+
+Custos is a Java 21 Maven multi-module project:
+
+| Module | Responsibility |
+|---|---|
+| `engine/` | Cryptographic kernel: Barrier, Seal/Unseal, storage, lease, audit, AK/SK, KV, DB credential engines, Raft parts |
+| `identity/` | Agent identity, JWT, OBO, SPIFFE/SVID, token verification |
+| `authz/` | PDP: jCasbin RBAC/domain, ABAC, risk scoring, approval hooks, Nacos policy watcher |
+| `broker/` | PEP: secretless query broker, MCP tool server, read-only SQL enforcement |
+| `app/` | Spring Boot host: REST API, operator lifecycle, policy, resources, approvals, audit, monitor |
+| `cli/` | Picocli admin and query client |
+| `sdk/` | `custos-spring-boot-starter` client auto-configuration |
+| `console/` | Vue 3 + Element Plus admin console |
+| `examples/` | Docker stack, schema, MCP config, smoke client, acceptance runbook |
+| `docs/` | Design docs, roadmap, specs, docs cockpit, audit prep |
+
+Module dependency shape:
+
+```text
+engine <- identity/authz <- broker <- app / cli / sdk
+```
+
+Nacos is the control and discovery plane. Custos stores no cleartext secret in Nacos; Nacos carries policy/config metadata and, in later milestones, richer MCP/AI registry integration.
+
+## API Surface
+
+The Spring Boot host exposes these main REST areas:
+
+| Area | Endpoint |
+|---|---|
+| Operator lifecycle | `POST /operator/init`, `POST /operator/unseal`, `POST /operator/seal`, `GET /operator/status` |
+| Policy | `POST /policy`, `GET /policy` |
+| Resource registry | `POST /resources`, `GET /resources`, `POST /resources/{name}/rotate-admin`, `DELETE /resources/{name}` |
+| Query broker | `POST /query_db` |
+| Token issuing | `POST /token/issue` |
+| Approval workflow | `GET /approvals`, `POST /approvals/{id}/approve`, `POST /approvals/{id}/deny` |
+| Audit | `GET /audit`, `GET /audit/verify` |
+| Monitor / leases | `GET /monitor/stats`, `GET /leases` |
+
+MCP stdio mode is available when `custos.transport.mcp-stdio=true`. The Claude/Codex example config lives in [examples/claude-mcp.json](examples/claude-mcp.json), and the smoke client lives in [examples/mcp_smoke_client.py](examples/mcp_smoke_client.py).
+
+## Java SDK
+
+Add the starter:
 
 ```xml
 <dependency>
   <groupId>io.custos</groupId>
   <artifactId>custos-spring-boot-starter</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
 </dependency>
 ```
 
----
+Configure `custos.client.*` in your Spring Boot service to get an auto-configured `CustosClient`. See [sdk/src/main/java/io/custos/sdk](sdk/src/main/java/io/custos/sdk).
 
-## ROADMAP
+## Admin Console
 
-已交付 vs 规划、产品主线、四大护城河详见 [docs/ROADMAP.md](docs/ROADMAP.md)。
+The console is a standalone Vue app:
 
-## 贡献
+```bash
+cd console
+npm install
+npm run dev
+```
 
-遵循 brainstorm → spec → plan → TDD → `mvn -B verify` 门禁的工作节奏（见 [CLAUDE.md](CLAUDE.md)）；绝不直接在 main 上开发，先开 `impl/<x>` 分支。
+It targets the host API and includes operator, resource, approval, audit, and monitor views.
 
-## 许可证
+## Development
 
-**Apache-2.0**。Custos 密钥引擎完全自研，不依赖/不抄 Vault(BSL)/OpenBao(MPL)/Infisical-EE 代码；竞品笔记仅总结公开架构与设计思想。
+Common commands:
 
----
+```bash
+# Full gate. Requires Docker for Testcontainers.
+mvn -B clean verify
 
-## 深入文档
+# Module tests
+mvn -pl engine test
+mvn -pl broker test -Dtest=BrokerAuditWiringTest -Dsurefire.failIfNoSpecifiedTests=false
 
-> 以下为设计与调研参考资料，理解内核设计语言用。产品现状与规划以 [ROADMAP](docs/ROADMAP.md) 为准。
+# Include benchmark-tagged tests
+mvn -pl engine test -DbenchExcluded=
 
-### 📐 设计文档（`docs/design/`）— 按顺序读
+# Console
+cd console && npm run test:unit && npm run build
 
-| # | 文档 | 内容 |
-|---|---|---|
-| 00 | [综合与决策](docs/design/00-synthesis.md) | 跨竞品对比、借鉴/放弃、自研边界、差异化钉死、**许可证合规表** |
-| 01 | [总体架构](docs/design/01-architecture.md) | PDP/PEP 模型、三层+引擎内核、Nacos 控制面、数据流时序 |
-| 02 | [引擎威胁模型与密码学设计](docs/design/02-engine-crypto-design.md) | **【重中之重】** Barrier/密钥层级/Seal-Unseal/内存安全/哈希链审计/国密套件 |
-| 03 | [身份层设计](docs/design/03-identity-design.md) | per-session 身份、认证方法、**OBO 委托** |
-| 04 | [策略层设计 PDP](docs/design/04-authz-design.md) | RBAC+ABAC、工具级 scope(SEP-835)、可解释、JIT 审批 |
-| 05 | [Nacos 控制面集成](docs/design/05-nacos-integration.md) | 注册、**秒级吊销**、namespace、MCP/A2A |
-| 06 | [经纪层设计 PEP](docs/design/06-secrets-broker.md) | 动态凭证、**secretless 经纪**、轮换 |
-| 07 | [MVP 纵向线](docs/design/07-mvp-vertical-slice.md) | 模块清单 + WBS + 验收标准 |
-| 08 | [仓库脚手架与选型](docs/design/08-repo-scaffold.md) | 目录结构、**引擎语言 Java vs Go 论证**、CI、依赖清单 |
+# MCP smoke test
+python examples/mcp_smoke_client.py "SELECT 1"
+```
 
-### 🔍 竞品学习笔记（`docs/research/`）
+Project workflow is documented in [CLAUDE.md](CLAUDE.md): brainstorm -> spec -> plan -> TDD implementation -> `mvn -B verify` -> docs cockpit update.
 
-| 笔记 | 学什么 |
+## Documentation Map
+
+| Document | Purpose |
 |---|---|
-| [openbao.md](docs/research/openbao.md) | 引擎内核：Barrier/Seal-Unseal/Lease/动态密钥/审计（MPL，不抄码）|
-| [vault.md](docs/research/vault.md) | 赛道设计语言；BSL 只读参照 |
-| [spire.md](docs/research/spire.md) | 工作负载身份：SVID/attestation/信任域（Apache，可深借）|
-| [cerbos.md](docs/research/cerbos.md) | 解耦 PDP：策略模型/可解释决策 |
-| [casbin.md](docs/research/casbin.md) | 国产授权库：PERM 模型（落地内核）|
-| [nacos.md](docs/research/nacos.md) | 控制面：配置热更新/MCP Registry（护城河）|
-| [infisical.md](docs/research/infisical.md) | 密钥平台 + "agents never see secret"（直接竞品）|
-| [jimmer.md](docs/research/jimmer.md) | 持久化 ORM 选型：不可变实体 + 类型安全 DSL（Apache，国产活跃）|
+| [docs/ROADMAP.md](docs/ROADMAP.md) | Delivered vs planned capabilities |
+| [examples/demo.md](examples/demo.md) | Runnable AC1-AC9 acceptance flow |
+| [docs/audit/AUDIT-PREP.md](docs/audit/AUDIT-PREP.md) | External security audit entry and known gaps |
+| [docs/design/01-architecture.md](docs/design/01-architecture.md) | Architecture, trust boundaries, data flows |
+| [docs/design/02-engine-crypto-design.md](docs/design/02-engine-crypto-design.md) | Threat model and cryptographic design |
+| [docs/cockpit.html](docs/cockpit.html) | Module/spec/plan dashboard |
 
-### 📚 引用资料中文摘要（`docs/references/`）
+## Security Posture
 
-[MCP/SEP-835](docs/references/mcp-sep-835.md) · [OAuth2 Token-Exchange/OBO](docs/references/oauth2-token-exchange-obo.md) · [SPIFFE/SPIRE](docs/references/spiffe-spire.md) · [Vault/OpenBao Barrier·Seal·Lease](docs/references/vault-openbao-barrier-seal-lease.md) · [Cerbos 策略模型](docs/references/cerbos-policy-model.md) · [Casbin PERM 模型](docs/references/casbin-perm-model.md) · [Nacos MCP/配置热更新](docs/references/nacos-mcp-registry-config.md) · [国密 SM2/SM3/SM4](docs/references/gm-crypto-sm2-sm3-sm4.md)
+Custos is built around a few hard rules:
+
+- The key engine is self-authored. Do not copy Vault, OpenBao, or Infisical-EE code.
+- Do not invent cryptography. Use JDK crypto and BouncyCastle through `CipherSuite`.
+- Nacos carries policy and metadata, not secrets.
+- The LLM boundary is untrusted; the broker returns results, not credentials.
+- Known production gaps are tracked in [docs/audit/AUDIT-PREP.md](docs/audit/AUDIT-PREP.md), including TLS, JWT/SVID key custody, least-privilege resource admin roles, and external audit items.
+
+## License
+
+Apache-2.0.
