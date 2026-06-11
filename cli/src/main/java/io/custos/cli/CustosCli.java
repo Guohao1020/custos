@@ -13,7 +13,8 @@ import java.net.http.HttpResponse;
 
 /** Custos 运维 CLI：operator/policy/audit 打 REST admin。--server/--token 跨子命令继承。 */
 @Command(name = "custos", mixinStandardHelpOptions = true,
-        subcommands = {CustosCli.Operator.class, CustosCli.PolicyCmd.class, CustosCli.AuditCmd.class, CustosCli.Query.class})
+        subcommands = {CustosCli.Operator.class, CustosCli.PolicyCmd.class, CustosCli.AuditCmd.class,
+                CustosCli.Query.class, CustosCli.ResourceCmd.class})
 public class CustosCli {
 
     @Option(names = "--server", scope = ScopeType.INHERIT, defaultValue = "http://127.0.0.1:8080")
@@ -30,6 +31,11 @@ public class CustosCli {
     static String get(String path) throws Exception {
         HttpRequest req = HttpRequest.newBuilder(URI.create(server + path))
                 .header("Authorization", "Bearer " + token).GET().build();
+        return HttpClient.newHttpClient().send(req, HttpResponse.BodyHandlers.ofString()).body();
+    }
+    static String delete(String path) throws Exception {
+        HttpRequest req = HttpRequest.newBuilder(URI.create(server + path))
+                .header("Authorization", "Bearer " + token).DELETE().build();
         return HttpClient.newHttpClient().send(req, HttpResponse.BodyHandlers.ofString()).body();
     }
     static String jsonStr(String s) {
@@ -70,6 +76,54 @@ public class CustosCli {
                 System.out.println(post("/query_db", "{\"tool\":" + jsonStr(tool) + ",\"schema\":" + jsonStr(schema)
                         + ",\"sql\":" + jsonStr(sql) + ",\"userToken\":" + jsonStr(userToken) + "}"));
             } catch (Exception e) { throw new RuntimeException(e); }
+        }
+    }
+
+    /** 资源接入运维:打 /resources REST。adminPassword 只进 body,绝不打印到 stdout/日志。 */
+    @Command(name = "resource", subcommands = {ResourceCmd.Register.class, ResourceCmd.ListCmd.class,
+            ResourceCmd.Rm.class, ResourceCmd.RotateAdmin.class})
+    static class ResourceCmd {
+        @Command(name = "register") static class Register implements Runnable {
+            @Option(names = "--name", required = true) String name;
+            @Option(names = "--type", defaultValue = "db.relational") String type;
+            @Option(names = "--dialect", required = true) String dialect;
+            @Option(names = "--jdbc-url", required = true) String jdbcUrl;
+            @Option(names = "--admin-user", required = true) String adminUser;
+            @Option(names = "--admin-password", required = true) String adminPassword;
+            @Option(names = "--role", defaultValue = "read-only") String role;
+            @Option(names = "--schema", defaultValue = "") String schema;
+            public void run() {
+                try {
+                    String effectiveSchema = schema.isEmpty() ? name : schema;
+                    String roleJson = "{\"name\":" + jsonStr(role) + ",\"kind\":\"BUILTIN_READONLY\""
+                            + ",\"creationStatements\":[],\"revocationStatements\":[]"
+                            + ",\"defaultTtlSeconds\":3600,\"schema\":" + jsonStr(effectiveSchema) + "}";
+                    String body = "{\"name\":" + jsonStr(name) + ",\"type\":" + jsonStr(type)
+                            + ",\"dialect\":" + jsonStr(dialect) + ",\"jdbcUrl\":" + jsonStr(jdbcUrl)
+                            + ",\"adminUsername\":" + jsonStr(adminUser) + ",\"adminPassword\":" + jsonStr(adminPassword)
+                            + ",\"roles\":[" + roleJson + "]}";
+                    // adminPassword 仅随 body 上送,响应不回显密码;故可安全打印响应。
+                    System.out.println(post("/resources", body));
+                } catch (Exception e) { throw new RuntimeException(e); }
+            }
+        }
+        @Command(name = "list") static class ListCmd implements Runnable {
+            public void run() { try { System.out.println(get("/resources")); } catch (Exception e) { throw new RuntimeException(e); } }
+        }
+        @Command(name = "rm") static class Rm implements Runnable {
+            @Option(names = "--name", required = true) String name;
+            public void run() { try { System.out.println(delete("/resources/" + name)); } catch (Exception e) { throw new RuntimeException(e); } }
+        }
+        @Command(name = "rotate-admin") static class RotateAdmin implements Runnable {
+            @Option(names = "--name", required = true) String name;
+            @Option(names = "--admin-password", required = true) String adminPassword;
+            public void run() {
+                try {
+                    // adminPassword 只进 body,不打印。
+                    System.out.println(post("/resources/" + name + "/rotate-admin",
+                            "{\"adminPassword\":" + jsonStr(adminPassword) + "}"));
+                } catch (Exception e) { throw new RuntimeException(e); }
+            }
         }
     }
 
