@@ -43,6 +43,7 @@
 | G4 | Raft 读为 leader-local | 弱于线性化读 | ReadIndex 强化列入计划可选步 |
 | G5 | KV 单写者假设 | 宿主层串行化约定 | Raft 线性化写已就绪，CAS 语义按需加 |
 | G6 | stdio MCP 模式假定启动前已解封 | 文档声明 | REST 模式无此约束（默认） |
+| G7 | 资源高权限管理凭证权限过大 | demo 用 `GRANT ALL` 的 custos 账号作资源 admin | **密钥已 Barrier 加密托管✓（v0.5 资源接入，落盘无明文、用后 Zeroize、可 rotate-admin 轮换）**；剩余缺口=权限过大，生产应为每资源配最小权限 admin 角色（仅 `CREATE USER`/`GRANT`/`DROP USER`） |
 
 ## 6. 审计建议入口
 

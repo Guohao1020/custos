@@ -23,6 +23,11 @@ rm -f "$TOKEN_FILE"
       -d "{\"share\":\"$S\"}" >> "$LOG" 2>&1
     echo >> "$LOG"
   done
+  # 注册 appdb 资源（去硬编码后必须显式注册：高权限凭证 custos/custospwd 经 Barrier 加密托管）
+  curl -s -X POST "http://localhost:$PORT/resources" \
+    -H "Authorization: Bearer demo-token" -H "Content-Type: application/json" \
+    -d '{"name":"appdb","type":"db.relational","dialect":"mysql","jdbcUrl":"jdbc:mysql://localhost:3306/appdb","adminUsername":"custos","adminPassword":"custospwd","roles":[{"name":"read-only","kind":"BUILTIN_READONLY","creationStatements":[],"revocationStatements":[],"defaultTtlSeconds":3600,"schema":"appdb"}]}' >> "$LOG" 2>&1
+  echo "resource appdb registered" >> "$LOG"
   # 给 claude-prod 签发会话令牌（须由本实例签发：每个 host 自持签名密钥）
   curl -s -X POST "http://localhost:$PORT/token/issue" \
     -H "Authorization: Bearer demo-token" -H "Content-Type: application/json" \

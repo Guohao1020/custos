@@ -57,7 +57,7 @@ rid = 3
 for sql in sys.argv[1:]:
     send({"jsonrpc": "2.0", "id": rid, "method": "tools/call", "params": {
         "name": "query_db", "arguments": {
-            "tool": "db/query_orders", "schema": "appdb", "sql": sql, "userToken": token}}})
+            "tool": "db/query_orders", "resource": "appdb", "role": "read-only", "sql": sql, "userToken": token}}})
     r = recv(rid)["result"]
     text = r["content"][0]["text"]
     print(f"[query_db] sql={sql!r}\n  -> isError={r.get('isError')} {text}")

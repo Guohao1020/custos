@@ -34,6 +34,21 @@ custos --token $TOKEN operator status                          # {"sealed":false
 **通过标准**：缺片时 status 仍 sealed（progress<3）且查询被拒；满 3 片后 unsealed。
 （实现/测试：`OperatorService` + `HostEndToEndIT`：init 后 sealed、满 3 片解封并装配运营组件。）
 
+## 1.5 注册受治理资源（AC0 · 资源接入）
+
+去硬编码后，目标库须显式注册：管理员提供连接串 + **高权限管理凭证**，custos 用它现场签发即用即焚只读凭证。高权限凭证整条经 Barrier 加密落盘（见 AC9）。
+
+```bash
+custos --token $TOKEN resource register \
+  --name appdb --type db.relational --dialect mysql \
+  --jdbc-url jdbc:mysql://mysql:3306/appdb \
+  --admin-user custos --admin-password custospwd --role read-only
+custos --token $TOKEN resource list          # ["appdb"]（脱敏，无密码）
+```
+> 等价 REST：`POST /resources`（admin-gated）。MySQL/PostgreSQL 走内置适配器；罕见库用 `--role` 的 SQL 模板（creation/revocation）。
+
+**通过标准**：注册后 `resource list` 含 appdb；落盘记录为密文（AC9）。
+
 ## 2. 写策略到 Nacos（允许 claude-prod 只读）
 
 ```bash
@@ -53,16 +68,16 @@ g, agent:claude-prod, role:reader, default'
 > ```
 
 - **MCP**：MCP 客户端（Claude/Codex）以 stdio 启动 custos-broker（`custos.transport.mcp-stdio=true` 且已解封），调用
-  `query_db { tool:"db/query_orders", schema:"appdb", sql:"SELECT COUNT(*) AS n FROM appdb.orders", userToken:"<JWT>" }`。
+  `query_db { tool:"db/query_orders", resource:"appdb", role:"read-only", sql:"SELECT COUNT(*) AS n FROM appdb.orders", userToken:"<JWT>" }`。
 - **REST**（等价，便于演示）：
 ```bash
 curl -s -XPOST localhost:8080/query_db -H 'Content-Type: application/json' \
-  -d "{\"tool\":\"db/query_orders\",\"schema\":\"appdb\",\"sql\":\"SELECT COUNT(*) AS n FROM appdb.orders\",\"userToken\":\"$JWT\"}"
+  -d "{\"tool\":\"db/query_orders\",\"resource\":\"appdb\",\"role\":\"read-only\",\"sql\":\"SELECT COUNT(*) AS n FROM appdb.orders\",\"userToken\":\"$JWT\"}"
 # 期望 {"allowed":true,"rows":[{"n":3}],"denyReason":null}
 ```
 - **CLI**（等价）：
 ```bash
-custos query --tool db/query_orders --schema appdb --sql "SELECT COUNT(*) AS n FROM appdb.orders" --user-token $JWT
+custos query --tool db/query_orders --resource appdb --sql "SELECT COUNT(*) AS n FROM appdb.orders" --user-token $JWT
 # 一键重新密封（admin）：custos --token $TOKEN operator seal
 ```
 
@@ -103,6 +118,23 @@ docker exec -it <mysql> mysql -uroot -prootpwd -e "SELECT HEX(svalue) FROM custo
 ```
 
 **通过标准**：均为密文；改一字节后读取报完整性失败。（`JimmerStorageIT` 断言落盘密文、`IntlSuiteAeadTest` 验证 GCM tag 篡改即 IntegrityException。）
+
+## 6.5 高权限密钥托管（AC9）
+
+资源的高权限管理凭证（`custos`/`custospwd`）整条记录经 Barrier 加密落盘，绝不明文、绝不进 Nacos：
+
+```bash
+# 资源记录在 custos_storage 的 resource/appdb 键，值为密文：
+docker exec <mysql> mysql -ucustos -pcustospwd -N -e \
+  "SELECT HEX(svalue) FROM custos.custos_storage WHERE skey='resource/appdb'"   # 一串密文 hex
+docker exec <mysql> mysql -ucustos -pcustospwd -N -e \
+  "SELECT svalue FROM custos.custos_storage WHERE skey='resource/appdb'" | grep -i custospwd   # 无命中
+custos --token $TOKEN resource list            # 列表脱敏，无密码
+custos --token $TOKEN resource rotate-admin --name appdb --admin-password <new>   # 轮换：旧密文换新
+```
+
+**通过标准**：落盘 grep 不到明文高权限密码；REST/CLI 响应不回显密码；轮换后旧密文失效。
+（实现/测试：`ResourceStoreIT` 断言落盘无明文密码；`ResourceControllerIT` 断言响应脱敏。）
 
 ## 7. 一键起（AC8）
 
