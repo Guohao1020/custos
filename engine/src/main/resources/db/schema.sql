@@ -20,3 +20,16 @@ CREATE TABLE IF NOT EXISTS custos_lease (
   issued_at     BIGINT NOT NULL, expire_at BIGINT NOT NULL,
   revoked       TINYINT NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS custos_approval (
+  id          VARCHAR(160) PRIMARY KEY,
+  agent       VARCHAR(512) NOT NULL,
+  tool        VARCHAR(256) NOT NULL,
+  resource    VARCHAR(256) NOT NULL,
+  role        VARCHAR(128) NOT NULL,
+  risk        INT NOT NULL,
+  reason      VARCHAR(512),
+  status      VARCHAR(32) NOT NULL,
+  created_at  BIGINT NOT NULL,
+  decided_at  BIGINT NOT NULL DEFAULT 0,
+  expire_at   BIGINT NOT NULL DEFAULT 0
+);
