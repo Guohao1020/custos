@@ -45,12 +45,17 @@ public final class McpQueryToolServer {
         }
         QueryResult r = b.queryDb(
                 new QueryIntent((String) args.get("tool"), (String) args.get("resource"),
-                        (String) args.getOrDefault("role", "read-only"), (String) args.get("sql")),
+                        (String) args.getOrDefault("role", "read-only"), (String) args.get("sql"),
+                        (String) args.get("approvalId")),
                 (String) args.get("userToken"));
-        String text = r.allowed() ? ("rows=" + r.rows()) : ("DENIED: " + r.denyReason());
+        String text = switch (r.status()) {
+            case ALLOWED -> "rows=" + r.rows();
+            case PENDING -> "PENDING: " + r.approvalId() + "（待审批，approve 后携 approvalId 重发）";
+            case DENIED -> "DENIED: " + r.denyReason();
+        };
         return McpSchema.CallToolResult.builder()
                 .content(List.of(McpSchema.TextContent.builder(text).build()))
-                .isError(!r.allowed())
+                .isError(r.status() != QueryStatus.ALLOWED)
                 .build();
     }
 
@@ -63,7 +68,8 @@ public final class McpQueryToolServer {
                         "resource", Map.of("type", "string"),
                         "role", Map.of("type", "string"),
                         "sql", Map.of("type", "string"),
-                        "userToken", Map.of("type", "string")),
+                        "userToken", Map.of("type", "string"),
+                        "approvalId", Map.of("type", "string")),
                 "required", List.of("tool", "resource", "sql", "userToken"));
 
         McpSchema.Tool tool = McpSchema.Tool.builder("query_db", inputSchema)
