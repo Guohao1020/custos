@@ -7,6 +7,8 @@ import org.babyfish.jimmer.sql.ast.mutation.SaveMode;
 import java.nio.charset.StandardCharsets;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /** 哈希链审计：chain_hash_n = H(prev_hash || canonical)；敏感字段 HMAC 脱敏；只追加。Jimmer 实体读写。 */
 public final class HashChainAuditLog implements AuditLog {
@@ -61,6 +63,51 @@ public final class HashChainAuditLog implements AuditLog {
             expectedPrev = row.chainHash();
         }
         return VerifyResult.passed();
+    }
+
+    @Override
+    public List<AuditEntry> query(AuditQuery q) {
+        AuditRowTable t = AuditRowTable.$;
+        return sql.createQuery(t)
+                .whereIf(q.actor() != null, () -> t.actor().eq(q.actor()))
+                .whereIf(q.decision() != null, () -> t.decision().eq(q.decision()))
+                .whereIf(q.from() != null, () -> t.ts().ge(q.from()))
+                .whereIf(q.to() != null, () -> t.ts().le(q.to()))
+                .orderBy(t.seq().desc())
+                .select(t)
+                .limit(q.size(), (long) q.page() * q.size())
+                .execute().stream().map(this::toEntry).toList();
+    }
+
+    @Override
+    public long count(AuditQuery q) {
+        AuditRowTable t = AuditRowTable.$;
+        return sql.createQuery(t)
+                .whereIf(q.actor() != null, () -> t.actor().eq(q.actor()))
+                .whereIf(q.decision() != null, () -> t.decision().eq(q.decision()))
+                .whereIf(q.from() != null, () -> t.ts().ge(q.from()))
+                .whereIf(q.to() != null, () -> t.ts().le(q.to()))
+                .select(t.count())
+                .execute().get(0);
+    }
+
+    @Override
+    public Map<String, Long> decisionCounts(int recentWindow) {
+        AuditRowTable t = AuditRowTable.$;
+        List<AuditRow> rows;
+        if (recentWindow <= 0) {
+            rows = sql.createQuery(t).select(t).execute();
+        } else {
+            rows = sql.createQuery(t).orderBy(t.seq().desc()).select(t).limit(recentWindow, 0L).execute();
+        }
+        return rows.stream()
+                .filter(r -> r.decision() != null)
+                .collect(Collectors.groupingBy(AuditRow::decision, Collectors.counting()));
+    }
+
+    private AuditEntry toEntry(AuditRow r) {
+        return new AuditEntry(r.seq(), r.ts(), r.actor(), r.task(), r.resource(),
+                r.action(), r.decision(), r.resultDigest());
     }
 
     private String lastChainHash() {
