@@ -6,7 +6,7 @@ import jakarta.servlet.http.HttpServletResponse;
 
 import java.io.IOException;
 
-/** 简易 Bearer 保护：/operator、/policy、/audit、/resources、/token、/approvals 路径需匹配 CUSTOS_ADMIN_TOKEN。 */
+/** 简易 Bearer 保护：/operator、/policy、/audit、/resources、/token、/approvals、/leases、/monitor 路径需匹配 CUSTOS_ADMIN_TOKEN。 */
 public final class AdminTokenFilter implements Filter {
     private final String expected;
     public AdminTokenFilter(String expected) { this.expected = expected; }
@@ -17,7 +17,7 @@ public final class AdminTokenFilter implements Filter {
         String path = r.getRequestURI();
         boolean adminPath = path.startsWith("/operator") || path.startsWith("/policy")
                 || path.startsWith("/audit") || path.startsWith("/resources") || path.startsWith("/token")
-                || path.startsWith("/approvals");
+                || path.startsWith("/approvals") || path.startsWith("/leases") || path.startsWith("/monitor");
         if (adminPath && (expected == null || expected.isBlank() || !("Bearer " + expected).equals(r.getHeader("Authorization")))) {
             ((HttpServletResponse) res).sendError(HttpServletResponse.SC_UNAUTHORIZED, "admin token required");
             return;

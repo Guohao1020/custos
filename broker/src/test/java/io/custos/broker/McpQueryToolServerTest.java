@@ -48,6 +48,7 @@ class McpQueryToolServerTest {
         public Lease renew(String leaseId, Duration increment) { throw new AssertionError("不应续约"); }
         public void revoke(String leaseId) { throw new AssertionError("不应撤销"); }
         public int revokePrefix(String prefix) { throw new AssertionError("不应批量撤销"); }
+        public List<Lease> listActive() { throw new AssertionError("不应列举租约"); }
     }
 
     private ResourceManager minimalResources() {

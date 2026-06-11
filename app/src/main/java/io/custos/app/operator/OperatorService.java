@@ -88,6 +88,6 @@ public final class OperatorService {
         // 审批单非密钥，明文直连 DB（与 storage 共用 JSqlClient，但不经 Barrier）
         JimmerApprovalStore approvals = new JimmerApprovalStore(engine.sql());
         BrokerService broker = new BrokerService(tokens, pdp, resourceManager, new SecretlessQueryExecutor(), audit, approvals);
-        ctx.set(new UnsealedContext(storage, audit, broker, resourceManager, approvals));
+        ctx.set(new UnsealedContext(storage, audit, broker, resourceManager, approvals, leases));
     }
 }

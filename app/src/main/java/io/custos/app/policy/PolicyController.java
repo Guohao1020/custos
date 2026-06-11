@@ -15,4 +15,11 @@ public class PolicyController {
         svc.put(body.get("content"));
         return Map.of("ok", true);
     }
+
+    /** admin-gated：读当前生效策略文本（控制面无策略时 policy 为空串）。 */
+    @GetMapping
+    public Map<String, Object> current() {
+        String text = svc.get();
+        return Map.of("dataId", svc.dataId(), "policy", text == null ? "" : text);
+    }
 }

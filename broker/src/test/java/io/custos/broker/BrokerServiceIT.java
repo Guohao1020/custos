@@ -77,11 +77,14 @@ class BrokerServiceIT {
 
     private final CapturingAudit audit = new CapturingAudit();
 
-    /** 捕获式审计：断言每次决策都落了一条审计行。 */
+    /** 捕获式审计：断言每次决策都落了一条审计行。query/count/decisionCounts 不被本 IT 触达。 */
     static final class CapturingAudit implements io.custos.engine.audit.AuditLog {
         final java.util.List<io.custos.engine.audit.AuditRecord> records = new java.util.ArrayList<>();
         public void append(io.custos.engine.audit.AuditRecord r) { records.add(r); }
         public io.custos.engine.audit.VerifyResult verify() { return io.custos.engine.audit.VerifyResult.passed(); }
+        public java.util.List<io.custos.engine.audit.AuditEntry> query(io.custos.engine.audit.AuditQuery q) { return java.util.List.of(); }
+        public long count(io.custos.engine.audit.AuditQuery q) { return records.size(); }
+        public java.util.Map<String, Long> decisionCounts(int recentWindow) { return java.util.Map.of(); }
     }
 
     private DefaultBarrier barrier() {

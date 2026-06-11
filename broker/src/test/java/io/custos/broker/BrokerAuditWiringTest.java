@@ -41,11 +41,14 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class BrokerAuditWiringTest {
 
-    /** 捕获式审计，仅记录被 append 的事件。 */
+    /** 捕获式审计，仅记录被 append 的事件。query/count/decisionCounts 不被本用例触达。 */
     static final class CapturingAudit implements AuditLog {
         final List<AuditRecord> records = new ArrayList<>();
         public void append(AuditRecord r) { records.add(r); }
         public VerifyResult verify() { return VerifyResult.passed(); }
+        public List<io.custos.engine.audit.AuditEntry> query(io.custos.engine.audit.AuditQuery q) { return List.of(); }
+        public long count(io.custos.engine.audit.AuditQuery q) { return records.size(); }
+        public Map<String, Long> decisionCounts(int recentWindow) { return Map.of(); }
     }
 
     /** 内存 Storage 假实现（deny 路径不触达资源解析，故内部不需真 DB）。 */
@@ -63,6 +66,7 @@ class BrokerAuditWiringTest {
         public Lease renew(String leaseId, Duration increment) { throw new AssertionError("deny 路径不应续约"); }
         public void revoke(String leaseId) { throw new AssertionError("deny 路径不应撤销"); }
         public int revokePrefix(String prefix) { throw new AssertionError("deny 路径不应批量撤销"); }
+        public List<Lease> listActive() { throw new AssertionError("deny 路径不应列举租约"); }
     }
 
     /** 最小 ResourceManager：不挂任何资源，deny 路径不会 require 到它。 */
