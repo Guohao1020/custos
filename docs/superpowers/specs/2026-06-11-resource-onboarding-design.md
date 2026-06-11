@@ -16,10 +16,11 @@ desc: "企业快速接入数据库/中间件：运行时资源注册表 + 高权
 高权限管理凭证是 compose 明文 `custos`/`custospwd`，`DynamicDbCredentials` 把 MySQL 的
 `CREATE USER 'x'@'%'` 语法写死——无法对接第二个库。
 
-本切片把这套升级为 Vault database-secrets-engine 模型：管理员运行时注册资源 + 配高权限密钥，
-custos 用它现场签发即用即焚短时凭证，**高权限密钥全程经 Barrier 加密托管**——这是引擎核心价值
-（密钥托管）的正面兑现，也是「不要 demo 思维」在接入层的落地。承接定位 spec
-`2026-06-11-positioning-and-docs.md` §4.2，本 spec 细化为可实现的 v0.5。
+本切片把这套升级为 Vault secrets-engine 模型，且**资源是泛型分类**（DB/NoSQL/MQ/LLM…，不绑死关系型 DB）：
+管理员运行时注册资源 + 配高权限密钥，custos 现场签发即用即焚短时凭证（或对静态密钥型代管访问），
+**高权限密钥全程经 Barrier 加密托管**——这是引擎核心价值（密钥托管）的正面兑现，也是「不要 demo 思维」
+在接入层的落地。承接定位 spec `2026-06-11-positioning-and-docs.md` §4.2，本 spec 细化为可实现的 v0.5
+（实现范围限 `db.relational` 动态型，模型/SPI 覆盖全分类，见 §1 D5 与 §2.0）。
 
 ## 1 · 已确认的关键决策
 
@@ -29,23 +30,44 @@ custos 用它现场签发即用即焚短时凭证，**高权限密钥全程经 B
 | D2 | v0.5 内置 **MySQL + PostgreSQL** 适配器，其余库走 **SQL 模板逃生口** | 复用已有两实现零额外依赖；Oracle/SQLServer 走模板，内置适配器按需后补 |
 | D3 | **显式注册**（去硬编码 `target-jdbc-url`） | demo 加 AC0 展示真实接入流程；更干净无隐式魔法 |
 | D4 | 一个资源支持**多个具名角色**（内置 `read-only` + 模板） | 对齐 Vault，模型正确；Agent 按 resource/role 请求 |
+| D5 | **资源是泛型分类，不绑死关系型 DB**：taxonomy（`db.relational`/`db.kv`/`db.document`/`mq`/`llm`…）+ SPI 同时容纳**两种引擎形状**（动态凭证型 / 静态密钥型）。**v0.5 只实现 `db.relational` 动态型** | 模型一步到位不返工；NoSQL/MQ/LLM 以后是「加适配器 + 加 type」。证据：现有 `SecretsEngine` SPI 已同时服务 `DynamicDbCredentials`(DB) 与 `AkSkSecretsEngine`(非 DB)，`KvEngine` 管静态密钥——通用性已被验证 |
 
 ## 2 · 架构与组件
 
 新包 `engine/src/main/java/io/custos/engine/resource/`（引擎层）+ app 的 REST/装配 + broker 解析。
 
+### 2.0 · 泛型资源模型 + 两种引擎形状（D5）
+
+**Resource = custos 代管访问的受治理后端**，带开放命名空间 `type`，不绑死 DB：
+
+| type | 例子 | 引擎形状 |
+|---|---|---|
+| `db.relational` | MySQL / PostgreSQL / Oracle | 动态凭证 |
+| `db.kv` / `db.document` | Redis / MongoDB / ES | 动态凭证（各自 ACL/user API） |
+| `mq` | Kafka / RabbitMQ / RocketMQ | 动态凭证（动态 SASL/ACL） |
+| `llm` | OpenAI / Claude / 通义 | **静态密钥**（API key 预共享，无「建临时用户」） |
+
+SPI 定义**两种引擎形状**（都进 registry，按 type 绑定）：
+
+- **`DynamicCredentialEngine`**（mint 即用即焚）：`issue(role, ttl)→IssuedCred` + `revoke(leaseId)` + 租约到期清理。DB/NoSQL/MQ 走这条。即现有 `SecretsEngine` 形状。
+- **`StaticSecretEngine`**（Barrier 托管静态密钥，代管访问）：`resolve(role)` 取出托管密钥；两种交付——**护栏式返回**给授权方，或**代理注入**（custos 替 Agent 调用、注入 key，Agent 永不见 key = LLM 版 secretless）；`rotate(newSecret)`。LLM/预共享密钥走这条。
+
+> **v0.5 只实现 `db.relational` 的 `DynamicCredentialEngine`。** `StaticSecretEngine` 接口在 SPI 中定义但不实现（LLM 落在 v0.6+，那时是「加实现」不是「改模型」）。
+
+### 2.1 · v0.5 组件（db.relational 动态型）
+
 | 组件 | 职责 | 依赖 |
 |---|---|---|
-| `ResourceRecord`（record） | 资源定义：name、dialect（mysql/postgresql/template）、jdbcUrl、adminUsername、adminPassword、`List<RoleDef>` | — |
-| `RoleDef`（record） | 角色：name、kind（`BUILTIN_READONLY`/`TEMPLATE`）、creationStatements、revocationStatements、defaultTtlSeconds、schema | — |
+| `ResourceRecord`（record） | 资源定义：name、**`type`**（v0.5 = `db.relational`）、dialect（mysql/postgresql/template）、jdbcUrl、adminUsername、adminPassword、`List<RoleDef>` | — |
+| `RoleDef`（record） | 角色（动态型）：name、kind（`BUILTIN_READONLY`/`TEMPLATE`）、creationStatements、revocationStatements、defaultTtlSeconds、schema。（其他 type 各自定义授权配置形状） | — |
 | `ResourceStore` | 经 `Storage`（Barrier 加密）持久化资源记录：put/get/list/delete，key=`resource/<name>` | engine `Storage`、Jackson |
-| `DbCredentialAdapter`（SPI） | `issue(Connection admin, RoleDef, Duration) → IssuedCred` + `revoke(Connection admin, String username)` | — |
+| `CredentialAdapter`（SPI） | 动态型方言适配：`issue(Connection admin, RoleDef, Duration) → IssuedCred` + `revoke(Connection admin, String username)` | — |
 | `MySqlAdapter` / `PostgresAdapter` | 内置方言：重构现有 `DynamicDbCredentials` / `PostgresDynamicCredentials` 的 DDL 进来 | JDBC |
 | `TemplateAdapter` | 跑 RoleDef 的 creation/revocation 模板，占位符 `{{name}}`/`{{password}}`/`{{expiration}}` 替换 | JDBC |
-| `ResourceSecretsEngine implements SecretsEngine` | 包一条 ResourceRecord：issue 时临时开 admin 连接→选适配器→签发→Zeroize 密码→关连接→登记租约 | ResourceStore、Barrier、LeaseManager、adapters |
-| `ResourceManager` | register（试连校验→存→挂 registry）、list、get、unregister、rotateAdminKey | ResourceStore、SecretsEngineRegistry、AuditLog |
+| `DbDynamicEngine implements DynamicCredentialEngine` | 包一条 ResourceRecord：issue 时临时开 admin 连接→按 dialect 选适配器→签发→Zeroize 密码→关连接→登记租约 | ResourceStore、Barrier、LeaseManager、adapters |
+| `ResourceManager` | register（按 type 选引擎工厂→试连校验→存→挂 registry）、list、get、unregister、rotateAdminKey | ResourceStore、SecretsEngineRegistry、AuditLog |
 
-`SecretsEngine` SPI / `SecretsEngineRegistry`（mount/require）/ `IssuedCred` 已存在，复用。
+`SecretsEngine` SPI / `SecretsEngineRegistry`（mount/require）/ `IssuedCred` 已存在，`DynamicCredentialEngine` 即其形状；`StaticSecretEngine` 为新增 SPI 接口（v0.5 不实现）。
 
 ## 3 · 数据流 + 密钥托管时序
 
@@ -129,5 +151,6 @@ BrokerService：PDP 决策通过后 `registry.require(intent.resource()).issue(i
 ## 9 · 不做（YAGNI）
 
 - 不做 Nacos 配置同步资源元数据（v0.6）；不做 console 资源 GUI（v0.6）；不做连接池（按需开关，v0.6 优化）。
-- 不做 Oracle/SQLServer 内置适配器（走模板）；不做中间件/系统引擎类型（DB 优先，后续 secrets-engine 类型）。
+- 不做 Oracle/SQLServer 内置适配器（走模板）。
+- **`StaticSecretEngine` 形状只在 SPI 定义、v0.5 不实现**；LLM（静态密钥 / 代理注入）、MQ、NoSQL 引擎类型同理——taxonomy 与 SPI 已容纳，落在 v0.6+，届时是「加实现」非「改模型」。
 - 不做资源级 ABAC 策略（v0.6 可选）；不做高权限凭证的自动轮换调度（仅手动 rotate-admin）。
