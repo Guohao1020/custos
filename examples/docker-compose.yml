@@ -73,3 +73,28 @@ services:
     ports: ["3000:80"]
     depends_on:
       - custos
+
+  # Prometheus：按 prometheus.yml 的 job custos 每 15s 抓 custos:8080/actuator/prometheus。
+  # 该端点 admin-gated（无 token 401），故 scrape 配置带 Bearer demo-token（= custos 的 CUSTOS_ADMIN_TOKEN）。
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports: ["9090:9090"]
+    depends_on:
+      - custos
+
+  # Grafana：匿名 Viewer 免登录看图（admin/admin 可改盘）；provisioning 自动挂 Prometheus 数据源 +
+  # 「Custos 概览」仪表盘。宿主 3001 避开 console 的 3000，浏览器开 http://localhost:3001 即见盘。
+  grafana:
+    image: grafana/grafana:11.2.0
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports: ["3001:3000"]
+    depends_on:
+      - prometheus

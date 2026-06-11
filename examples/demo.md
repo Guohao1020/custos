@@ -227,6 +227,47 @@ custos --token $TOKEN audit verify                 # {"ok":true,"brokenAtSeq":-1
 > compose 内 console 经 nginx 同源反代 `/api/ → custos:8080`，不触发跨域；
 > dev 模式（Vite 5173 直连 8080）由 host 的 `custos.console.origin` CORS 白名单放行（不用通配符）。
 
+## 11. 可观测性（M17 · Prometheus + Grafana）
+
+`docker compose up` 同时起 `prometheus`（抓 custos 指标）与 `grafana`（出图）两个服务。
+custos 经 Micrometer/Actuator 暴露 `/actuator/prometheus`，**该端点 admin-gated**——
+与 console、Prometheus scrape 共用同一把 `CUSTOS_ADMIN_TOKEN`（demo 为 demo-token）。
+
+```bash
+# 1) 带 admin token 拉指标，应见一批 custos_* 指标（决策计数 / 延迟直方图 / seal 态 / 租约 / 审批队深）
+curl -s -H "Authorization: Bearer demo-token" http://localhost:8080/actuator/prometheus | grep '^custos_'
+#   custos_decisions_total{decision="allow"} 3.0
+#   custos_credentials_issued_total 3.0
+#   custos_seal_sealed 0.0
+#   custos_leases_active 0.0
+#   custos_query_duration_seconds_bucket{...} ...
+#   custos_pdp_decision_duration_seconds_bucket{...} ...
+
+# 2) 不带 token → 401（指标端点不对匿名暴露）
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/actuator/prometheus   # => 401
+
+# 3) 健康检查开放（无需 token），就绪后返回 200 + {"status":"UP"}
+curl -s http://localhost:8080/actuator/health   # => {"status":"UP",...}
+```
+
+浏览器开 Grafana（匿名 Viewer 免登录，改盘用 admin/admin）：
+
+```bash
+#   http://localhost:3001
+# 左上 Dashboards → 「Custos 概览」——provisioning 自动挂好 Prometheus 数据源 + 仪表盘。
+```
+
+仪表盘面板（先跑几次 §3 的 query_db / §9 的审批，再回看曲线）：
+
+- **密封状态 / 活跃租约 / 已接入资源 / 审批队列深度**：四张 stat，对应 `custos_seal_sealed`、`custos_leases_active`、`custos_resources_count`、`custos_approvals_pending`。
+- **决策速率（按 decision）**：`sum by (decision) (rate(custos_decisions_total[5m]))`，allow/deny/require-approval 分线。
+- **近窗拒绝率**：deny 占比。
+- **查询 / PDP 决策延迟 p95**：`histogram_quantile(0.95, rate(custos_query_duration_seconds_bucket[5m]))`（PDP 同式）。
+- **凭证签发 / 撤销速率**：`rate(custos_credentials_issued_total[5m])` / `rate(custos_credentials_revoked_total[5m])`，即用即焚的一对曲线对称起落。
+
+> **安全姿态**：指标只承载有界 tag（decision/action 枚举）与计数/耗时，**绝不含 agent/resource/SQL/token/凭证**；
+> Prometheus 以 Bearer token 抓取（与 admin API 同源鉴权），匿名访问被 401 挡住。
+
 ## 附：验证真实 Nacos 秒级推送（计划 4 的环境门控 IT）
 
 stack 起来后，本地对着 compose 暴露的 Nacos 跑：
