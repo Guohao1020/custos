@@ -18,3 +18,20 @@ custos:
     issuer: custos
   transport:
     mcp-stdio: false
+management:
+  endpoints:
+    web:
+      exposure:
+        # 只暴露 health + prometheus；prometheus 经 AdminTokenFilter admin-gated，health 开放
+        include: health,prometheus
+  endpoint:
+    health:
+      # never：health 不泄 seal/装配明细（避免暴露 sealed 态给未鉴权方）
+      show-details: never
+  prometheus:
+    metrics:
+      export:
+        # 显式开启 Prometheus 导出。Micrometer 默认即开启，此处显式声明是为生产姿态明确意图，
+        # 并避免 classpath 上传递依赖（旧 micrometer/simpleclient 配套）影响 defaults 时仍稳定注册
+        # /actuator/prometheus（product-specific 属性优先于 management.defaults.metrics.export.enabled）。
+        enabled: true

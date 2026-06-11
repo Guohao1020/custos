@@ -3,6 +3,7 @@ package io.custos.app.operator;
 import io.custos.app.engine.EngineBootstrap;
 import io.custos.app.engine.UnsealedContext;
 import io.custos.authz.Pdp;
+import io.custos.broker.BrokerMetrics;
 import io.custos.broker.BrokerService;
 import io.custos.broker.SecretlessQueryExecutor;
 import io.custos.engine.approval.JimmerApprovalStore;
@@ -32,10 +33,12 @@ public final class OperatorService {
     private final EngineBootstrap engine;
     private final TokenService tokens;
     private final Pdp pdp;
+    private final BrokerMetrics metrics;
     private final AtomicReference<UnsealedContext> ctx = new AtomicReference<>();
 
-    public OperatorService(EngineBootstrap engine, TokenService tokens, Pdp pdp) {
+    public OperatorService(EngineBootstrap engine, TokenService tokens, Pdp pdp, BrokerMetrics metrics) {
         this.engine = engine; this.tokens = tokens; this.pdp = pdp;
+        this.metrics = metrics == null ? BrokerMetrics.NOOP : metrics;
     }
 
     public List<String> init(int shares, int threshold) {
@@ -87,7 +90,7 @@ public final class OperatorService {
 
         // 审批单非密钥，明文直连 DB（与 storage 共用 JSqlClient，但不经 Barrier）
         JimmerApprovalStore approvals = new JimmerApprovalStore(engine.sql());
-        BrokerService broker = new BrokerService(tokens, pdp, resourceManager, new SecretlessQueryExecutor(), audit, approvals);
+        BrokerService broker = new BrokerService(tokens, pdp, resourceManager, new SecretlessQueryExecutor(), audit, approvals, metrics);
         ctx.set(new UnsealedContext(storage, audit, broker, resourceManager, approvals, leases));
     }
 }

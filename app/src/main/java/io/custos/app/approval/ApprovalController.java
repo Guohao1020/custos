@@ -1,6 +1,7 @@
 package io.custos.app.approval;
 
 import io.custos.app.operator.OperatorService;
+import io.custos.broker.BrokerMetrics;
 import io.custos.engine.approval.PendingApproval;
 import org.springframework.web.bind.annotation.*;
 
@@ -16,8 +17,12 @@ public class ApprovalController {
     private static final long APPROVAL_WINDOW_MS = 15 * 60_000L;
 
     private final OperatorService op;
+    private final BrokerMetrics metrics;
 
-    public ApprovalController(OperatorService op) { this.op = op; }
+    public ApprovalController(OperatorService op, BrokerMetrics metrics) {
+        this.op = op;
+        this.metrics = metrics;
+    }
 
     @GetMapping
     public List<PendingApproval> pending() {
@@ -27,12 +32,15 @@ public class ApprovalController {
     @PostMapping("/{id}/approve")
     public Map<String, Object> approve(@PathVariable("id") String id) {
         op.unsealed().approvals().approve(id, System.currentTimeMillis() + APPROVAL_WINDOW_MS);
+        // created/consumed 由 broker 记，approved/denied 由此处记，凑齐 action 四态
+        metrics.recordApproval("approved");
         return Map.of("id", id, "status", "approved");
     }
 
     @PostMapping("/{id}/deny")
     public Map<String, Object> deny(@PathVariable("id") String id) {
         op.unsealed().approvals().deny(id);
+        metrics.recordApproval("denied");
         return Map.of("id", id, "status", "denied");
     }
 }

@@ -51,8 +51,9 @@ public class HostConfig {
     }
 
     @Bean
-    public OperatorService operatorService(EngineBootstrap engine, TokenService tokens, CasbinPdp pdp) {
-        return new OperatorService(engine, tokens, pdp);
+    public OperatorService operatorService(EngineBootstrap engine, TokenService tokens, CasbinPdp pdp,
+                                           io.custos.broker.BrokerMetrics metrics) {
+        return new OperatorService(engine, tokens, pdp, metrics);
     }
 
     @Bean
@@ -64,7 +65,7 @@ public class HostConfig {
     public FilterRegistrationBean<AdminTokenFilter> adminTokenFilter() {
         FilterRegistrationBean<AdminTokenFilter> reg = new FilterRegistrationBean<>(new AdminTokenFilter(System.getenv("CUSTOS_ADMIN_TOKEN")));
         reg.addUrlPatterns("/operator/*", "/policy/*", "/audit/*", "/token/*", "/resources/*", "/approvals/*",
-                "/leases/*", "/monitor/*");
+                "/leases/*", "/monitor/*", "/actuator/prometheus");   // 精确匹配 prometheus，放行 /actuator/health
         return reg;
     }
 }

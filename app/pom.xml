@@ -14,6 +14,13 @@
     <dependency><groupId>io.custos</groupId><artifactId>custos-authz</artifactId><version>0.1.0-SNAPSHOT</version></dependency>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter</artifactId><version>3.3.2</version></dependency>
     <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId><version>3.3.2</version></dependency>
+    <!-- M17 可观测性：Actuator 暴露端点 + Micrometer Prometheus registry。parent 非 starter-parent，须显式钉版本（与 Boot 3.3.2 对齐：micrometer 1.13.x）。 -->
+    <!-- micrometer-core 显式钉 1.13.2 作直接依赖：engine 经 SOFAJRaft 传递引入旧的 micrometer-core 1.9.17，
+         nearest-wins 会让旧版本胜出，与 1.13.2 的 registry-prometheus 混版本，运行期 NoSuchMethod/NoClassDefFound。
+         直接声明使其成为最近节点，强制统一到 1.13.2（与 jackson-bom 同类踩坑，见根 CLAUDE.md）。 -->
+    <dependency><groupId>io.micrometer</groupId><artifactId>micrometer-core</artifactId><version>1.13.2</version></dependency>
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-actuator</artifactId><version>3.3.2</version></dependency>
+    <dependency><groupId>io.micrometer</groupId><artifactId>micrometer-registry-prometheus</artifactId><version>1.13.2</version></dependency>
     <dependency><groupId>com.mysql</groupId><artifactId>mysql-connector-j</artifactId><version>8.4.0</version></dependency>
     <dependency><groupId>org.testcontainers</groupId><artifactId>mysql</artifactId><version>1.19.8</version><scope>test</scope></dependency>
     <dependency><groupId>org.testcontainers</groupId><artifactId>junit-jupiter</artifactId><version>1.19.8</version><scope>test</scope></dependency>
