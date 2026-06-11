@@ -203,6 +203,30 @@ custos --token $TOKEN audit verify                 # {"ok":true,"brokenAtSeq":-1
 
 （实现/测试：engine `JimmerApprovalStoreIT`、broker 审批流 IT、app `ApprovalFlowIT` 覆盖落库→列队列→approve→携 id 放行→单次消费防重放全链。）
 
+## 10. 后台管理控制台（M16）
+
+`docker compose up` 时一并起 `console` 服务（nginx 服 Vue 构建产物 + 反代 admin API），
+让安全团队"看得见"系统运行态：审计链浏览、实时监控、运维动作、资源 GUI、审批队列统一面板。
+
+```bash
+# compose 已含 console 服务，无需额外步骤；起来后浏览器开：
+#   http://localhost:3000
+# 登录页填 admin token —— 与 custos 服务的 CUSTOS_ADMIN_TOKEN 一致（demo 为 demo-token，见 compose）。
+```
+
+登录后各面板：
+
+- **实时监控**：卡片显示封印态（SEALED/UNSEALED）、活跃租约数、资源数、审计总数、决策计数（allow/deny/require-approval）、近窗拒绝率；每 5 秒轮询 `GET /monitor/stats`。
+- **审计浏览**：表格列 seq/时间/actor/决策/资源/result，可按 agent / decision 过滤 + 分页（`GET /audit`）；顶部"链完整性"徽章调 `GET /audit/verify`，断链显示 `brokenAtSeq`。
+- **运维动作**：逐片提交 Shamir 分片解封（进度 n/threshold）、密封（调 `/operator/*`）。
+- **资源配置**：列已注册资源 + 注册表单（`POST /resources`）+ rotate-admin + 删除；**高权限密码字段提交后立即清空、不回显、不入 localStorage**。
+- **审批队列**：列 pending 审批单 + approve/deny（接 M20 的 `/approvals*`）。
+
+> **安全姿态**：console 不持任何后端密钥，只持运维登录时填入的 admin token——存于 **sessionStorage，刷新即清**，
+> 经 axios 拦截器以 `Authorization: Bearer <token>` 出站；401 自动清 token 回登录页。
+> compose 内 console 经 nginx 同源反代 `/api/ → custos:8080`，不触发跨域；
+> dev 模式（Vite 5173 直连 8080）由 host 的 `custos.console.origin` CORS 白名单放行（不用通配符）。
+
 ## 附：验证真实 Nacos 秒级推送（计划 4 的环境门控 IT）
 
 stack 起来后，本地对着 compose 暴露的 Nacos 跑：

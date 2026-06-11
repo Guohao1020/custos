@@ -61,3 +61,15 @@ services:
         condition: service_healthy
       nacos-init:
         condition: service_completed_successfully
+
+  # 后台管理控制台（M16）：多阶段镜像 node 构建 Vue 产物 → nginx 服 dist。
+  # nginx 把 /api/ 反代到 custos:8080（同源，构建用 VITE_API_BASE=/api 免跨域）。
+  # 宿主开 http://localhost:3000，登录页填 CUSTOS_ADMIN_TOKEN（见 custos 服务，demo 为 demo-token）。
+  console:
+    build:
+      context: ../console
+      args:
+        VITE_API_BASE: /api
+    ports: ["3000:80"]
+    depends_on:
+      - custos
