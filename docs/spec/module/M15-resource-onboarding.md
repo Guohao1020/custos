@@ -19,7 +19,7 @@ subtasks:
       - engine/src/main/java/io/custos/engine/resource/ResourceRecord.java
       - engine/src/main/java/io/custos/engine/resource/RoleDef.java
     docs:
-      - docs/superpowers/specs/2026-06-11-resource-onboarding-design.md#§2.0
+      - docs/superpowers/specs/2026-06-11-resource-onboarding-design.md#泛型资源模型
   - id: M15-S2
     title: "资源记录经 Barrier 加密持久化（落盘无明文密码）"
     done: true
@@ -27,7 +27,7 @@ subtasks:
       - engine/src/main/java/io/custos/engine/resource/ResourceStore.java
       - engine/src/test/java/io/custos/engine/resource/ResourceStoreIT.java
     docs:
-      - docs/superpowers/specs/2026-06-11-resource-onboarding-design.md#§3
+      - docs/superpowers/specs/2026-06-11-resource-onboarding-design.md#数据流
   - id: M15-S3
     title: "凭证适配 SPI 与 MySQL 内置适配器"
     done: true
@@ -50,7 +50,7 @@ subtasks:
     code:
       - engine/src/main/java/io/custos/engine/resource/DbDynamicEngine.java
     docs:
-      - docs/superpowers/specs/2026-06-11-resource-onboarding-design.md#§3
+      - docs/superpowers/specs/2026-06-11-resource-onboarding-design.md#数据流
   - id: M15-S7
     title: "资源生命周期编排：注册/列表/轮换/注销 + 试连校验 + 审计"
     done: true
@@ -69,7 +69,7 @@ subtasks:
       - app/src/main/java/io/custos/app/resource/ResourceController.java
       - app/src/main/java/io/custos/app/operator/OperatorService.java
     docs:
-      - docs/superpowers/specs/2026-06-11-resource-onboarding-design.md#§4
+      - docs/superpowers/specs/2026-06-11-resource-onboarding-design.md#REST
   - id: M15-S10
     title: "CLI 资源子命令（register/list/rm/rotate-admin）"
     done: true
