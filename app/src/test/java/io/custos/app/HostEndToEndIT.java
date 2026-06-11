@@ -4,6 +4,9 @@ import io.custos.app.operator.OperatorService;
 import io.custos.app.policy.PolicyService;
 import io.custos.broker.QueryIntent;
 import io.custos.broker.QueryResult;
+import io.custos.engine.resource.ResourceRecord;
+import io.custos.engine.resource.RoleDef;
+import io.custos.engine.resource.RoleKind;
 import io.custos.identity.AgentId;
 import io.custos.identity.TokenService;
 import org.junit.jupiter.api.*;
@@ -21,6 +24,7 @@ import java.sql.Statement;
 import java.time.Duration;
 import java.util.List;
 import java.util.Set;
+import java.util.Collections;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -38,7 +42,6 @@ class HostEndToEndIT {
         r.add("custos.engine.storage-url", MYSQL::getJdbcUrl);
         r.add("custos.engine.storage-username", () -> "root");
         r.add("custos.engine.storage-password", () -> "root");
-        r.add("custos.broker.target-jdbc-url", HostEndToEndIT::appdbUrl);
         r.add("custos.nacos.server-addr", () -> "");   // 空 → InMemoryControlPlane
     }
 
@@ -70,10 +73,16 @@ class HostEndToEndIT {
         op.unseal(shares.get(0)); op.unseal(shares.get(1));
         assertFalse(op.unseal(shares.get(2)).sealed());
 
+        // 运行期注册目标库资源 appdb（高权限凭证经 Barrier 加密落盘，不再硬编码）
+        RoleDef readOnly = new RoleDef("read-only", RoleKind.BUILTIN_READONLY,
+                Collections.emptyList(), Collections.emptyList(), 3600, "appdb");
+        op.unsealed().resourceManager().register(new ResourceRecord(
+                "appdb", "db.relational", "mysql", appdbUrl(), "root", "root", List.of(readOnly)));
+
         // 写策略（允许 claude-prod 只读）
         policy.put("p, role:reader, default, tool:db/*, read, allow\ng, agent:claude-prod, role:reader, default\n");
 
-        // 准：claude-prod 查询返回行，且 secretless
+        // 准：claude-prod 查询返回行，且 secretless（resource=appdb）
         String allowTok = tokens.issue(new AgentId("corp.example", "claude-prod", "s1"), Set.of("tool:db/query_orders"), "broker", Duration.ofMinutes(15)).jwt();
         QueryResult ok = op.unsealed().broker().queryDb(new QueryIntent("db/query_orders", "appdb", "SELECT COUNT(*) AS n FROM appdb.orders"), allowTok);
         assertTrue(ok.allowed());

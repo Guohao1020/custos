@@ -16,8 +16,5 @@ custos:
     password: ${NACOS_PASSWORD:}
   identity:
     issuer: custos
-  broker:
-    db-readonly-schema: appdb
-    target-jdbc-url: jdbc:mysql://mysql:3306/appdb
   transport:
     mcp-stdio: false

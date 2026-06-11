@@ -51,9 +51,8 @@ public class HostConfig {
     }
 
     @Bean
-    public OperatorService operatorService(EngineBootstrap engine, TokenService tokens, CasbinPdp pdp, CustosProperties props) {
-        return new OperatorService(engine, tokens, pdp, props,
-                props.getEngine().getStorageUrl(), props.getEngine().getStorageUsername(), props.getEngine().getStoragePassword());
+    public OperatorService operatorService(EngineBootstrap engine, TokenService tokens, CasbinPdp pdp) {
+        return new OperatorService(engine, tokens, pdp);
     }
 
     @Bean
@@ -64,7 +63,7 @@ public class HostConfig {
     @Bean
     public FilterRegistrationBean<AdminTokenFilter> adminTokenFilter() {
         FilterRegistrationBean<AdminTokenFilter> reg = new FilterRegistrationBean<>(new AdminTokenFilter(System.getenv("CUSTOS_ADMIN_TOKEN")));
-        reg.addUrlPatterns("/operator/*", "/policy/*", "/audit/*", "/token/*");
+        reg.addUrlPatterns("/operator/*", "/policy/*", "/audit/*", "/token/*", "/resources/*");
         return reg;
     }
 }

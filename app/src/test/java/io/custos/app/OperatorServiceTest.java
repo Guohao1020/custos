@@ -44,7 +44,7 @@ class OperatorServiceTest {
         var g = KeyPairGenerator.getInstance("EC"); g.initialize(new ECGenParameterSpec("secp256r1"));
         TokenService tokens = new JwtTokenService(g.generateKeyPair(), "custos", new InMemoryBlacklist());
         CasbinPdp pdp = new CasbinPdp();
-        op = new OperatorService(new EngineBootstrap(props), tokens, pdp, props, MYSQL.getJdbcUrl(), "root", "root");
+        op = new OperatorService(new EngineBootstrap(props), tokens, pdp);
     }
 
     @Test
