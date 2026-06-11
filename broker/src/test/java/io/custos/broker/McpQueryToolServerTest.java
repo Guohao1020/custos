@@ -77,7 +77,7 @@ class McpQueryToolServerTest {
         CasbinPdp pdp = new CasbinPdp();
         pdp.reload("p, role:reader, default, tool:db/*, read, allow\ng, agent:claude-prod, role:reader, default");
         BrokerService broker = new BrokerService(tokens, pdp, minimalResources(),
-                new SecretlessQueryExecutor(), null, new InMemoryApprovalStore());
+                new SecretlessQueryExecutor(), null, new InMemoryApprovalStore(), BrokerMetrics.NOOP);
         String evil = tokens.issue(new AgentId("corp.example", "evil-agent", "s1"),
                 Set.of("x"), "broker", Duration.ofMinutes(5)).jwt();
 

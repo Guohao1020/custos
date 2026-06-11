@@ -39,15 +39,18 @@ public final class BrokerService {
     private final SecretlessQueryExecutor executor;
     private final AuditLog audit;
     private final ApprovalStore approvals;
+    private final BrokerMetrics metrics;
 
     public BrokerService(TokenService tokens, Pdp pdp, ResourceManager resources,
-                         SecretlessQueryExecutor executor, AuditLog audit, ApprovalStore approvals) {
+                         SecretlessQueryExecutor executor, AuditLog audit, ApprovalStore approvals,
+                         BrokerMetrics metrics) {
         this.tokens = tokens;
         this.pdp = pdp;
         this.resources = resources;
         this.executor = executor;
         this.audit = audit;
         this.approvals = approvals;
+        this.metrics = metrics == null ? BrokerMetrics.NOOP : metrics;
     }
 
     public QueryResult queryDb(QueryIntent intent, String userToken) {
@@ -67,20 +70,27 @@ public final class BrokerService {
                     && ap.resource().equals(intent.resource());
             if (!ok) {
                 record(sub, intent.tool(), obj, "deny", "", "approval invalid/expired/mismatch");
+                metrics.recordDecision("deny");
                 return QueryResult.denied("approval invalid or expired");
             }
             approvals.markConsumed(intent.approvalId());
+            metrics.recordApproval("consumed");
             return issueAndRun(sub, obj, intent, "allow-approved");
         }
 
+        long pdp0 = System.nanoTime();
         Decision d = pdp.decide(DecisionRequest.of(sub, obj, "read"));
+        metrics.recordPdpDecisionDuration(Duration.ofNanos(System.nanoTime() - pdp0));
         if (d.effect() == Effect.DENY) {
             record(sub, intent.tool(), obj, "deny", "", d.reason());
+            metrics.recordDecision("deny");
             return QueryResult.denied(d.reason());
         }
         if (d.effect() == Effect.REQUIRE_APPROVAL) {
             String id = approvals.create(sub, intent.tool(), intent.resource(), intent.role(), d.risk(), d.reason());
+            metrics.recordApproval("created");
             record(sub, intent.tool(), obj, "require-approval", "", d.reason());
+            metrics.recordDecision("require-approval");
             return QueryResult.pending(id);
         }
         return issueAndRun(sub, obj, intent, "allow");
@@ -89,13 +99,22 @@ public final class BrokerService {
     /** 签发动态只读凭证 → secretless 执行 → 落审计 → 即用即焚撤销。allow / allow-approved 两条放行路径复用。 */
     private QueryResult issueAndRun(String sub, String obj, QueryIntent intent, String decision) {
         DbDynamicEngine engine = resources.require(intent.resource());
+        long i0 = System.nanoTime();
         IssuedCred cred = engine.issue(intent.role(), Duration.ofHours(1));
+        metrics.recordCredentialIssueDuration(Duration.ofNanos(System.nanoTime() - i0));
+        metrics.recordCredentialIssued();
         try {
+            long q0 = System.nanoTime();
             List<Map<String, Object>> rows = executor.runReadonly(engine.jdbcUrl(), cred, intent.sql());
+            metrics.recordQueryDuration(Duration.ofNanos(System.nanoTime() - q0));
             record(sub, intent.tool(), obj, decision, rows.size() + " rows", cred.leaseId());
+            metrics.recordDecision(decision);
             return QueryResult.ok(rows);
         } finally {
+            long r0 = System.nanoTime();
             engine.revoke(cred.leaseId());     // 即用即焚（也可留至租约到期）
+            metrics.recordCredentialRevokeDuration(Duration.ofNanos(System.nanoTime() - r0));
+            metrics.recordCredentialRevoked();
         }
     }
 
