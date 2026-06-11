@@ -63,7 +63,7 @@ public class HostConfig {
     @Bean
     public FilterRegistrationBean<AdminTokenFilter> adminTokenFilter() {
         FilterRegistrationBean<AdminTokenFilter> reg = new FilterRegistrationBean<>(new AdminTokenFilter(System.getenv("CUSTOS_ADMIN_TOKEN")));
-        reg.addUrlPatterns("/operator/*", "/policy/*", "/audit/*", "/token/*", "/resources/*");
+        reg.addUrlPatterns("/operator/*", "/policy/*", "/audit/*", "/token/*", "/resources/*", "/approvals/*");
         return reg;
     }
 }

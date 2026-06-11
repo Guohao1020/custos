@@ -19,7 +19,7 @@ public class QueryController {
         try {
             return op.unsealed().broker().queryDb(
                     new QueryIntent(body.get("tool"), body.get("resource"),
-                            body.getOrDefault("role", "read-only"), body.get("sql")),
+                            body.getOrDefault("role", "read-only"), body.get("sql"), body.get("approvalId")),
                     body.get("userToken"));
         } catch (IllegalStateException sealed) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "sealed");

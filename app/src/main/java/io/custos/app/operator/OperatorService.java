@@ -5,6 +5,7 @@ import io.custos.app.engine.UnsealedContext;
 import io.custos.authz.Pdp;
 import io.custos.broker.BrokerService;
 import io.custos.broker.SecretlessQueryExecutor;
+import io.custos.engine.approval.JimmerApprovalStore;
 import io.custos.engine.audit.HashChainAuditLog;
 import io.custos.engine.barrier.DefaultBarrier;
 import io.custos.engine.crypto.Keyring;
@@ -84,7 +85,9 @@ public final class OperatorService {
         ResourceManager resourceManager = new ResourceManager(resourceStore, registry, leases, audit);
         resourceManager.mountAll();   // 载入已持久化资源，挂回 registry
 
-        BrokerService broker = new BrokerService(tokens, pdp, resourceManager, new SecretlessQueryExecutor(), audit);
-        ctx.set(new UnsealedContext(storage, audit, broker, resourceManager));
+        // 审批单非密钥，明文直连 DB（与 storage 共用 JSqlClient，但不经 Barrier）
+        JimmerApprovalStore approvals = new JimmerApprovalStore(engine.sql());
+        BrokerService broker = new BrokerService(tokens, pdp, resourceManager, new SecretlessQueryExecutor(), audit, approvals);
+        ctx.set(new UnsealedContext(storage, audit, broker, resourceManager, approvals));
     }
 }

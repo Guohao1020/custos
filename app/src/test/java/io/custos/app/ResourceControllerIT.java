@@ -152,7 +152,7 @@ class ResourceControllerIT {
         ResponseEntity<String> q = http.postForEntity(url("/query_db"),
                 new HttpEntity<>(queryBody, jsonHeaders()), String.class);
         assertEquals(HttpStatus.OK, q.getStatusCode(), q.getBody());
-        assertTrue(q.getBody().contains("\"allowed\":true"), q.getBody());
+        assertTrue(q.getBody().contains("\"status\":\"ALLOWED\""), q.getBody());
         assertTrue(q.getBody().contains("\"n\":3"), q.getBody());
         assertFalse(q.getBody().contains("v_ro_"), "查询响应绝不能泄露临时凭证用户名");
     }
