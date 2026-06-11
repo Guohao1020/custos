@@ -93,7 +93,7 @@ class BrokerAuditWiringTest {
         TokenService tokens = tokens();
         CapturingAudit audit = new CapturingAudit();
         BrokerService broker = new BrokerService(tokens, denyAllPdp(), minimalResources(),
-                new SecretlessQueryExecutor(), audit);
+                new SecretlessQueryExecutor(), audit, new InMemoryApprovalStore());
 
         QueryResult r = broker.queryDb(
                 new QueryIntent("db/query_orders", "appdb", "SELECT 1"),
@@ -112,7 +112,7 @@ class BrokerAuditWiringTest {
     void nullAuditDoesNotThrow() throws Exception {
         TokenService tokens = tokens();
         BrokerService broker = new BrokerService(tokens, denyAllPdp(), minimalResources(),
-                new SecretlessQueryExecutor(), null);   // 无审计
+                new SecretlessQueryExecutor(), null, new InMemoryApprovalStore());   // 无审计
 
         QueryResult r = broker.queryDb(
                 new QueryIntent("db/query_orders", "appdb", "SELECT 1"),

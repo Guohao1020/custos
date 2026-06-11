@@ -1,7 +1,12 @@
 package io.custos.broker;
 
 import com.mysql.cj.jdbc.MysqlDataSource;
+import io.custos.authz.AbacPdp;
+import io.custos.authz.AbacPolicy;
 import io.custos.authz.CasbinPdp;
+import io.custos.authz.DenyApprovalHook;
+import io.custos.engine.approval.ApprovalStore;
+import io.custos.engine.approval.JimmerApprovalStore;
 import io.custos.engine.barrier.DefaultBarrier;
 import io.custos.engine.crypto.IntlSuite;
 import io.custos.engine.crypto.Keyring;
@@ -54,9 +59,11 @@ class BrokerServiceIT {
              Statement st = admin.createStatement()) {
             st.execute("CREATE TABLE IF NOT EXISTS custos_storage (skey VARCHAR(255) PRIMARY KEY, svalue LONGBLOB NOT NULL, updated_at BIGINT NOT NULL)");
             st.execute("CREATE TABLE IF NOT EXISTS custos_lease (lease_id VARCHAR(160) PRIMARY KEY, resource_path VARCHAR(512) NOT NULL, issued_at BIGINT NOT NULL, expire_at BIGINT NOT NULL, revoked TINYINT NOT NULL DEFAULT 0)");
+            st.execute("CREATE TABLE IF NOT EXISTS custos_approval (id VARCHAR(160) PRIMARY KEY, agent VARCHAR(512) NOT NULL, tool VARCHAR(256) NOT NULL, resource VARCHAR(256) NOT NULL, role VARCHAR(128) NOT NULL, risk INT NOT NULL, reason VARCHAR(512), status VARCHAR(32) NOT NULL, created_at BIGINT NOT NULL, decided_at BIGINT NOT NULL DEFAULT 0, expire_at BIGINT NOT NULL DEFAULT 0)");
             // 容器在同类多个测试方法间复用，清空状态表使每个方法从干净起点开始。
             st.execute("TRUNCATE TABLE custos_storage");
             st.execute("TRUNCATE TABLE custos_lease");
+            st.execute("TRUNCATE TABLE custos_approval");
             st.execute("CREATE DATABASE IF NOT EXISTS appdb");
             st.execute("CREATE TABLE IF NOT EXISTS appdb.orders (id INT)");
             st.execute("TRUNCATE TABLE appdb.orders");
@@ -85,17 +92,17 @@ class BrokerServiceIT {
         return new DefaultBarrier(new IntlSuite(), kr);
     }
 
-    private BrokerService broker() {
-        CasbinPdp pdp = new CasbinPdp();
-        pdp.reload("""
-                p, role:reader, default, tool:db/*, read, allow
-                g, agent:claude-prod, role:reader, default
-                """);
+    /** 审批单存储：approval-flow IT 在 broker 与断言间共享同一实例（broker() 各次调用都复用）。 */
+    private ApprovalStore approvalStore;
+
+    /** 装配资源 + 审批存储（每个测试方法都从干净表起步，见 @BeforeEach 的 TRUNCATE）。 */
+    private ResourceManager wireResources() {
         MysqlDataSource ds = new MysqlDataSource();
         ds.setUrl(MYSQL.getJdbcUrl());
         ds.setUser("root");
         ds.setPassword("root");
         JSqlClient sql = JimmerClients.of(ds);
+        approvalStore = new JimmerApprovalStore(sql);
         ResourceStore store = new ResourceStore(new JimmerStorage(sql, barrier()));
         DefaultLeaseManager leases = new DefaultLeaseManager(sql);
         SecretsEngineRegistry registry = new SecretsEngineRegistry();
@@ -104,7 +111,32 @@ class BrokerServiceIT {
         // 注册一条 mysql 资源 appdb：admin root/root，jdbcUrl 指向容器 appdb，read-only 角色 schema=appdb。
         resources.register(new ResourceRecord("appdb", "db.relational", "mysql", appdbUrl(), "root", "root",
                 List.of(new RoleDef("read-only", RoleKind.BUILTIN_READONLY, List.of(), List.of(), 3600, "appdb"))));
-        return new BrokerService(tokens, pdp, resources, new SecretlessQueryExecutor(), audit);
+        return resources;
+    }
+
+    private CasbinPdp readerPdp() {
+        CasbinPdp pdp = new CasbinPdp();
+        pdp.reload("""
+                p, role:reader, default, tool:db/*, read, allow
+                g, agent:claude-prod, role:reader, default
+                """);
+        return pdp;
+    }
+
+    /** 纯 RBAC：低风险一律 ALLOW（覆盖 allow / deny 基线）。 */
+    private BrokerService broker() {
+        ResourceManager resources = wireResources();
+        return new BrokerService(tokens, readerPdp(), resources, new SecretlessQueryExecutor(), audit, approvalStore);
+    }
+
+    /**
+     * ABAC 变体：RBAC 放行后用固定 55 分打分，approvalThreshold=50/denyThreshold=90 → 落入
+     * [50,90) 中风险区间，DenyApprovalHook 不自动放行 → REQUIRE_APPROVAL（触发审批闭环）。
+     */
+    private BrokerService brokerRequiringApproval() {
+        ResourceManager resources = wireResources();
+        AbacPdp pdp = new AbacPdp(readerPdp(), req -> 55, new DenyApprovalHook(), new AbacPolicy(50, 90, 0, 24));
+        return new BrokerService(tokens, pdp, resources, new SecretlessQueryExecutor(), audit, approvalStore);
     }
 
     private String tokenFor(String agent) {
@@ -137,5 +169,48 @@ class BrokerServiceIT {
         assertFalse(r.allowed());
         assertNotNull(r.denyReason());
         assertTrue(r.rows().isEmpty());
+    }
+
+    @Test
+    void approvalFlowPendingThenApprovedRetryReleasesThenConsumedBlocksReplay() {
+        BrokerService broker = brokerRequiringApproval();
+
+        // 1) 中风险首发 → PENDING + approvalId（不签发凭证，不出数据）。
+        QueryResult p = broker.queryDb(
+                new QueryIntent("db/query_orders", "appdb", "SELECT COUNT(*) AS n FROM appdb.orders"),
+                tokenFor("claude-prod"));
+        assertEquals(QueryStatus.PENDING, p.status());
+        assertNotNull(p.approvalId());
+        assertTrue(p.rows().isEmpty(), "PENDING 不得返回数据");
+
+        // 2) 人工批准（有效窗 10 分钟）→ 带 approvalId 重发 → 放行并返回真实行数。
+        approvalStore.approve(p.approvalId(), System.currentTimeMillis() + 600_000);
+        QueryResult a = broker.queryDb(
+                new QueryIntent("db/query_orders", "appdb", "read-only",
+                        "SELECT COUNT(*) AS n FROM appdb.orders", p.approvalId()),
+                tokenFor("claude-prod"));
+        assertTrue(a.allowed());
+        assertEquals(2L, ((Number) a.rows().get(0).get("n")).longValue());
+
+        // 3) 同一 approvalId 二次重发 → 已 CONSUMED → 拒绝（单次防重放）。
+        QueryResult again = broker.queryDb(
+                new QueryIntent("db/query_orders", "appdb", "read-only", "SELECT 1", p.approvalId()),
+                tokenFor("claude-prod"));
+        assertFalse(again.allowed());
+    }
+
+    @Test
+    void deniedApprovalIdReplayIsRejected() {
+        BrokerService broker = brokerRequiringApproval();
+
+        // 直接造一条审批单并 deny：带其 id 重发应被拒（非 APPROVED 状态）。
+        String id = approvalStore.create("agent:claude-prod", "db/query_orders", "appdb", "read-only", 55, "test");
+        approvalStore.deny(id);
+
+        QueryResult r = broker.queryDb(
+                new QueryIntent("db/query_orders", "appdb", "read-only", "SELECT 1", id),
+                tokenFor("claude-prod"));
+        assertFalse(r.allowed());
+        assertEquals(QueryStatus.DENIED, r.status());
     }
 }
