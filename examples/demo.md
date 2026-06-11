@@ -160,6 +160,49 @@ MySQL 存储与 Nacos 控制面）。[mcp-custos.sh](mcp-custos.sh) 负责：进
 > 注：MCP server 支持 sealed 启动（握手/tools-list 可用，工具调用返回 SEALED 提示），
 > 解封后无需重启即可服务；stdio 模式下 banner/控制台日志已关闭以保 JSON-RPC 通道纯净。
 
+## 9. 审批闭环（AC10）
+
+三态决策的第三态：`AbacPdp` 判出 `REQUIRE_APPROVAL`（风险分落在 approvalThreshold ~ denyThreshold 之间）时，
+broker 不直接拒，而是把待审批请求落 `custos_approval` 表并回 `{"status":"PENDING","approvalId":"..."}`；
+运维经 `/approvals` 队列 approve 后，agent 在 15 分钟有效窗内携 `approvalId` 重发即放行（单次有效，防重放）。
+
+> **触发条件**：demo 默认策略是直接 `allow`，不会触发第三态。要演示需让 PDP 对该请求判出
+> `REQUIRE_APPROVAL`——即 `RiskScorer` 给出的风险分介于 `approvalThreshold` 与 `denyThreshold` 之间
+> （配置见 ABAC 设计 spec `docs/superpowers/specs/2026-06-09-custos-abac-design.md`）。
+> 下面以 REST 演示完整闭环；若你的环境策略未触发第三态，可直接从第 2 步（列队列）观察经 `BrokerServiceIT`/`ApprovalFlowIT` 落库的审批单。
+
+```bash
+# 1) 触发中风险请求 → 返回 PENDING + approvalId（而非 denied）
+curl -s -XPOST localhost:8080/query_db -H 'Content-Type: application/json' \
+  -d "{\"tool\":\"db/query_orders\",\"resource\":\"appdb\",\"role\":\"read-only\",\"sql\":\"SELECT amount FROM appdb.orders WHERE id=1\",\"userToken\":\"$JWT\"}"
+# 期望 {"status":"PENDING","rows":[],"denyReason":"awaiting approval","approvalId":"<id>"}
+APPROVAL_ID=<上一步返回的 approvalId>
+
+# 2) 运维列出 pending 审批队列（admin-gated）
+curl -s http://localhost:8080/approvals -H "Authorization: Bearer $TOKEN"
+# 期望 [{"id":"<id>","agent":"agent:claude-prod","tool":"db/query_orders","resource":"appdb","role":"read-only","risk":<n>,"reason":"...","status":"PENDING",...}]
+
+# 3) 批准该单（给 15 分钟有效窗）
+curl -s -XPOST "http://localhost:8080/approvals/$APPROVAL_ID/approve" -H "Authorization: Bearer $TOKEN"
+# 期望 {"id":"<id>","status":"approved"}
+
+# 4) agent 携 approvalId 在窗内重发 → 放行签发并查得数据
+curl -s -XPOST localhost:8080/query_db -H 'Content-Type: application/json' \
+  -d "{\"tool\":\"db/query_orders\",\"resource\":\"appdb\",\"role\":\"read-only\",\"sql\":\"SELECT amount FROM appdb.orders WHERE id=1\",\"userToken\":\"$JWT\",\"approvalId\":\"$APPROVAL_ID\"}"
+# 期望 {"status":"ALLOWED","rows":[{"amount":100}],"denyReason":null,"approvalId":null}
+
+# 5) 审计链仍完整：require-approval / approve / allow-approved 三条决策落链不断链
+custos --token $TOKEN audit verify                 # {"ok":true,"brokenAtSeq":-1}
+```
+
+**通过标准**（AC10）：
+- 中风险首次请求返回 `status=PENDING + approvalId`（不是 denied）；`GET /approvals` 能列出该 pending。
+- approve 后 agent 携 id 重发签发成功并查得数据；deny / 超时（>15min）/ 资源不一致 / 已消费重放均 denied。
+- `/approvals*` 缺 Bearer admin token → 401。
+- 三条审批动作审计（require-approval / approve / allow-approved）落哈希链，`audit verify` 仍 `ok:true`。
+
+（实现/测试：engine `JimmerApprovalStoreIT`、broker 审批流 IT、app `ApprovalFlowIT` 覆盖落库→列队列→approve→携 id 放行→单次消费防重放全链。）
+
 ## 附：验证真实 Nacos 秒级推送（计划 4 的环境门控 IT）
 
 stack 起来后，本地对着 compose 暴露的 Nacos 跑：
