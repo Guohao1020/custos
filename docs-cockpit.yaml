@@ -4,7 +4,7 @@ project:
   mark: C
   eyebrow: "PROJECT COCKPIT"
   tagline: "Nacos 原生 · AI Agent 身份·密钥·权限统一引擎"
-  output: docs/index.html
+  output: docs/cockpit.html
 
 paths:
   repo: "."
