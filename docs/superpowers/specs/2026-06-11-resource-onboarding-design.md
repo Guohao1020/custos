@@ -32,6 +32,26 @@ desc: "企业快速接入数据库/中间件：运行时资源注册表 + 高权
 | D4 | 一个资源支持**多个具名角色**（内置 `read-only` + 模板） | 对齐 Vault，模型正确；Agent 按 resource/role 请求 |
 | D5 | **资源是泛型分类，不绑死关系型 DB**：taxonomy（`db.relational`/`db.kv`/`db.document`/`mq`/`llm`…）+ SPI 同时容纳**两种引擎形状**（动态凭证型 / 静态密钥型）。**v0.5 只实现 `db.relational` 动态型** | 模型一步到位不返工；NoSQL/MQ/LLM 以后是「加适配器 + 加 type」。证据：现有 `SecretsEngine` SPI 已同时服务 `DynamicDbCredentials`(DB) 与 `AkSkSecretsEngine`(非 DB)，`KvEngine` 管静态密钥——通用性已被验证 |
 
+## 1.5 · 技术栈（零新增依赖）
+
+整条切片全用仓库已有依赖——设计贴合现状的信号。
+
+| 维度 | 选型 |
+|---|---|
+| 语言/构建 | Java 21 · Maven 多模块 |
+| 模块落点 | `engine/resource` 新**包**（不新建模块）+ app（REST/Service）+ cli（子命令）+ broker（解析） |
+| 持久化 | 复用 `Storage`（Barrier 加密 KV）：资源存 `resource/<name>` blob，`list("resource/")` 驱动列表。**不建新表、不加 Jimmer 实体** |
+| 序列化 | Jackson（jackson-databind，经 parent jackson-bom 2.17.2）：ResourceRecord ↔ JSON bytes |
+| 密钥托管 | 现有 Barrier（信封加密）+ Zeroize（用后清零）——硬约束：只用经审计库 |
+| JDBC 驱动 | mysql-connector-j 8.4.0 + postgresql 42.7.3 |
+| 模板替换 | 纯 `String` 占位符替换（`{{name}}`/`{{password}}`/`{{expiration}}`），不引模板库 |
+| 连接管理 | `DriverManager` 按需开关，不引连接池（HikariCP 留 v0.6） |
+| REST / CLI | Spring Boot Web 3.3.2 + 现有 `AdminTokenFilter` / picocli 4.7.6 |
+| 租约/审计 | 现有 `LeaseManager` + `HashChainAuditLog` |
+| 测试 | JUnit 5 + Testcontainers 1.19.8（MySQL+PG，`api.version=1.40`）+ spring-boot-starter-test |
+
+栈内微决策：① 资源存 KV-blob 不建表 ② 模板纯字符串替换 ③ 连接按需开关不引池。
+
 ## 2 · 架构与组件
 
 新包 `engine/src/main/java/io/custos/engine/resource/`（引擎层）+ app 的 REST/装配 + broker 解析。
@@ -67,7 +87,8 @@ SPI 定义**两种引擎形状**（都进 registry，按 type 绑定）：
 | `DbDynamicEngine implements DynamicCredentialEngine` | 包一条 ResourceRecord：issue 时临时开 admin 连接→按 dialect 选适配器→签发→Zeroize 密码→关连接→登记租约 | ResourceStore、Barrier、LeaseManager、adapters |
 | `ResourceManager` | register（按 type 选引擎工厂→试连校验→存→挂 registry）、list、get、unregister、rotateAdminKey | ResourceStore、SecretsEngineRegistry、AuditLog |
 
-`SecretsEngine` SPI / `SecretsEngineRegistry`（mount/require）/ `IssuedCred` 已存在，`DynamicCredentialEngine` 即其形状；`StaticSecretEngine` 为新增 SPI 接口（v0.5 不实现）。
+`SecretsEngine` SPI / `SecretsEngineRegistry`（mount/require）/ `IssuedCred` 已存在，`DynamicCredentialEngine` 即其形状。
+**`StaticSecretEngine`（静态密钥型 / LLM 代理注入）记为设计意图,接口在 v0.6 接 LLM 时再落地——v0.5 不写空接口（避免 dead code）；taxonomy 已用 `type=llm` 给它留位。**
 
 ## 3 · 数据流 + 密钥托管时序
 
@@ -152,5 +173,5 @@ BrokerService：PDP 决策通过后 `registry.require(intent.resource()).issue(i
 
 - 不做 Nacos 配置同步资源元数据（v0.6）；不做 console 资源 GUI（v0.6）；不做连接池（按需开关，v0.6 优化）。
 - 不做 Oracle/SQLServer 内置适配器（走模板）。
-- **`StaticSecretEngine` 形状只在 SPI 定义、v0.5 不实现**；LLM（静态密钥 / 代理注入）、MQ、NoSQL 引擎类型同理——taxonomy 与 SPI 已容纳，落在 v0.6+，届时是「加实现」非「改模型」。
+- **LLM 网关整体推迟到 v0.6+**（静态密钥型：代理注入 / 动态维护轮换 key / OpenAI 兼容网关 / Higress 取舍）——v0.5 连 `StaticSecretEngine` 接口都不写（避免 dead code），仅 taxonomy 留位 `type=llm`。MQ / NoSQL 同理（v0.6+ 加适配器，不改模型）。
 - 不做资源级 ABAC 策略（v0.6 可选）；不做高权限凭证的自动轮换调度（仅手动 rotate-admin）。
