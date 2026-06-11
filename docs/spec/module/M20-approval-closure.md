@@ -7,6 +7,7 @@ progress: 0
 manualProgress: false
 desc: "三态决策的第三态落地：AbacPdp 判出 REQUIRE_APPROVAL 时，broker 把 pending 审批请求持久化（agent/工具/资源/风险/原因）并返回'待审批'而非直接拒；审批 REST（列队列 / approve / deny）+ 审批通过后原请求在 TTL 窗内放行。M16 console 审批队列面板的后端前置。"
 docs:
+  - { title: "审批闭环设计 spec", path: "docs/superpowers/specs/2026-06-11-approval-closure-design.md" }
   - { title: "定位/ROADMAP（v0.6 真相源）", path: "docs/ROADMAP.md" }
   - { title: "ABAC 三态设计（REQUIRE_APPROVAL 来源）", path: "docs/superpowers/specs/2026-06-09-custos-abac-design.md" }
   - { title: "Admin Console 设计（审批面板消费方）", path: "docs/superpowers/specs/2026-06-11-admin-console-design.md" }
