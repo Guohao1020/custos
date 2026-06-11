@@ -83,6 +83,22 @@ public final class RaftLeaseManager implements LeaseManager {
         return n;
     }
 
+    @Override
+    public List<Lease> listActive() {
+        long now = System.currentTimeMillis();                 // 与 register 写入、sweepExpired 比较同一毫秒基准
+        return client.list(PREFIX).stream()
+                .map(key -> {
+                    byte[] raw = client.get(key);
+                    if (raw == null) return null;
+                    Entry e = decode(raw);
+                    if (e.revoked || e.expireAt <= now) return null;
+                    return new Lease(key.substring(PREFIX.length()), e.resourcePath, e.issuedAt, e.expireAt);
+                })
+                .filter(java.util.Objects::nonNull)
+                .sorted(java.util.Comparator.comparingLong(Lease::issuedAt).reversed())
+                .toList();
+    }
+
     private void sweepExpired() {
         try {
             if (!isLeader.getAsBoolean()) return;            // leader-only：单扫描者保证"不重"

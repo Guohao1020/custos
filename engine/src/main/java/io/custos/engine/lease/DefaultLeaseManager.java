@@ -80,6 +80,21 @@ public final class DefaultLeaseManager implements LeaseManager {
         return ids.size();
     }
 
+    @Override
+    public List<Lease> listActive() {
+        long now = System.currentTimeMillis();                 // 与 register 写入、sweepExpired 比较同一毫秒基准
+        LeaseRowTable t = LeaseRowTable.$;
+        return sql.createQuery(t)
+                .where(t.revoked().eq(false))
+                .where(t.expireAt().gt(now))
+                .orderBy(t.issuedAt().desc())
+                .select(t)
+                .execute()
+                .stream()
+                .map(r -> new Lease(r.leaseId(), r.resourcePath(), r.issuedAt(), r.expireAt()))
+                .toList();
+    }
+
     private void sweepExpired() {
         try {
             LeaseRowTable t = LeaseRowTable.$;

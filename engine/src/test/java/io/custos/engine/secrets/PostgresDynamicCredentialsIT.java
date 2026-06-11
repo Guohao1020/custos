@@ -44,6 +44,8 @@ class PostgresDynamicCredentialsIT {
         }
 
         public int revokePrefix(String p) { return 0; }
+
+        public java.util.List<Lease> listActive() { return java.util.List.of(); }
     }
 
     private Connection admin;

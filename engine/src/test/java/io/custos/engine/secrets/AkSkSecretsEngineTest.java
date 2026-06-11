@@ -48,6 +48,9 @@ class AkSkSecretsEngineTest {
 
         @Override
         public int revokePrefix(String prefix) { return 0; }
+
+        @Override
+        public java.util.List<Lease> listActive() { return java.util.List.of(); }
     }
 
     @Test

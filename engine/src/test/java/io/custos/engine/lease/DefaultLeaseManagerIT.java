@@ -61,4 +61,14 @@ class DefaultLeaseManagerIT {
         Lease lease = leases.register("db/creds/x", Duration.ofMinutes(10), l -> {});
         assertTrue(leases.renew(lease.leaseId(), Duration.ofHours(2)).expireAt() > lease.expireAt());
     }
+
+    @Test
+    void listActiveExcludesRevokedAndExpired() {
+        Lease live = leases.register("db/appdb", Duration.ofHours(1), id -> {});
+        Lease toRevoke = leases.register("db/appdb", Duration.ofHours(1), id -> {});
+        leases.revoke(toRevoke.leaseId());
+        var active = leases.listActive();
+        assertTrue(active.stream().anyMatch(l -> l.leaseId().equals(live.leaseId())));
+        assertTrue(active.stream().noneMatch(l -> l.leaseId().equals(toRevoke.leaseId())));
+    }
 }
