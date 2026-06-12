@@ -46,7 +46,8 @@ public final class McpQueryToolServer {
         QueryResult r = b.queryDb(
                 new QueryIntent((String) args.get("tool"), (String) args.get("resource"),
                         (String) args.getOrDefault("role", "read-only"), (String) args.get("sql"),
-                        (String) args.get("approvalId")),
+                        (String) args.get("approvalId"),
+                        (String) args.getOrDefault("tenant", "default")),
                 (String) args.get("userToken"));
         String text = switch (r.status()) {
             case ALLOWED -> "rows=" + r.rows();
@@ -69,7 +70,8 @@ public final class McpQueryToolServer {
                         "role", Map.of("type", "string"),
                         "sql", Map.of("type", "string"),
                         "userToken", Map.of("type", "string"),
-                        "approvalId", Map.of("type", "string")),
+                        "approvalId", Map.of("type", "string"),
+                        "tenant", Map.of("type", "string")),
                 "required", List.of("tool", "resource", "sql", "userToken"));
 
         McpSchema.Tool tool = McpSchema.Tool.builder("query_db", inputSchema)

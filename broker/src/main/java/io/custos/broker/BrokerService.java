@@ -79,7 +79,8 @@ public final class BrokerService {
         }
 
         long pdp0 = System.nanoTime();
-        Decision d = pdp.decide(DecisionRequest.of(sub, obj, "read"));
+        // tenant 作 RBAC domain 路由到对应租户独立策略（默认 "default"=现有单租户，向后兼容）。
+        Decision d = pdp.decide(DecisionRequest.of(sub, intent.tenant(), obj, "read"));
         metrics.recordPdpDecisionDuration(Duration.ofNanos(System.nanoTime() - pdp0));
         if (d.effect() == Effect.DENY) {
             record(sub, intent.tool(), obj, "deny", "", d.reason());
