@@ -10,6 +10,8 @@ public class CustosProperties {
     private Identity identity = new Identity();
     private Broker broker = new Broker();
     private Console console = new Console();
+    private java.util.List<Tenant> tenants = new java.util.ArrayList<>();
+    private Cluster cluster = new Cluster();
 
     public static class Engine {
         private String storageUrl = "jdbc:mysql://localhost:3306/custos";
@@ -47,9 +49,26 @@ public class CustosProperties {
         private String origin = "http://localhost:5173,http://localhost:3000";
         public String getOrigin() { return origin; } public void setOrigin(String v) { origin = v; }
     }
+    /** 一个策略租户：name=RBAC domain（=请求里的 tenant），namespace=该租户策略所在的 Nacos namespace。
+     *  tenants 为空时退化为单租户 default（namespace=nacos.namespace），严格向后兼容。 */
+    public static class Tenant {
+        private String name; private String namespace;
+        public Tenant() {}
+        public Tenant(String name, String namespace) { this.name = name; this.namespace = namespace; }
+        public String getName() { return name; } public void setName(String v) { name = v; }
+        public String getNamespace() { return namespace; } public void setNamespace(String v) { namespace = v; }
+    }
+    /** 集群注册配置：serviceName=注册到 Nacos NamingService 的服务名；register=是否在启动时注册自身。 */
+    public static class Cluster {
+        private String serviceName = "custos-host"; private boolean register = true;
+        public String getServiceName() { return serviceName; } public void setServiceName(String v) { serviceName = v; }
+        public boolean isRegister() { return register; } public void setRegister(boolean v) { register = v; }
+    }
     public Engine getEngine() { return engine; } public void setEngine(Engine v) { engine = v; }
     public Nacos getNacos() { return nacos; } public void setNacos(Nacos v) { nacos = v; }
     public Identity getIdentity() { return identity; } public void setIdentity(Identity v) { identity = v; }
     public Broker getBroker() { return broker; } public void setBroker(Broker v) { broker = v; }
     public Console getConsole() { return console; } public void setConsole(Console v) { console = v; }
+    public java.util.List<Tenant> getTenants() { return tenants; } public void setTenants(java.util.List<Tenant> v) { tenants = v; }
+    public Cluster getCluster() { return cluster; } public void setCluster(Cluster v) { cluster = v; }
 }

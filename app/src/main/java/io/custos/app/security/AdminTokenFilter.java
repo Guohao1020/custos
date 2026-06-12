@@ -25,6 +25,7 @@ public final class AdminTokenFilter implements Filter {
         boolean adminPath = path.startsWith("/operator") || path.startsWith("/policy")
                 || path.startsWith("/audit") || path.startsWith("/resources") || path.startsWith("/token")
                 || path.startsWith("/approvals") || path.startsWith("/leases") || path.startsWith("/monitor")
+                || path.startsWith("/cluster")
                 // 只门控 prometheus，不写 /actuator 前缀以免连带拦住开放的 /actuator/health
                 || path.startsWith("/actuator/prometheus");
         if (adminPath && (expected == null || expected.isBlank() || !("Bearer " + expected).equals(r.getHeader("Authorization")))) {
