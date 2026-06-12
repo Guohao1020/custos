@@ -55,6 +55,18 @@ services:
       NACOS_USERNAME: nacos
       NACOS_PASSWORD: DemoPass123
       CUSTOS_ADMIN_TOKEN: demo-token
+      # M18 Nacos 深接：host 启动即经 NamingService 注册为 Nacos 服务实例（service-name=custos-host）。
+      # 默认单租户 default（custos.tenants 留空 → 用 nacos.namespace=public，dom=default，向后兼容）。
+      # 多租户：每租户一个独立 Nacos namespace，query_db 带 tenant 入参路由到各自策略（未配置 tenant 一律拒）。
+      # 配多租户有两种方式（任选其一；额外 namespace 须先在 Nacos 控制台预建）：
+      #   A) 环境变量（Spring Relaxed Binding，索引从 0）：
+      #      CUSTOS_TENANTS_0_NAME: default
+      #      CUSTOS_TENANTS_0_NAMESPACE: public
+      #      CUSTOS_TENANTS_1_NAME: tenant-a
+      #      CUSTOS_TENANTS_1_NAMESPACE: ns-tenant-a
+      #   B) 挂载 application.yml（custos.tenants[] 列表，见 examples/demo.md §12.2）。
+      # 多 host 发现：再起一个共享同 MySQL + 同 Nacos 的 custos 实例即注册进同一 custos-host 服务，
+      #   /cluster/peers 返回多条（compose 不强制加第二实例，避免端口/复杂度；见 demo.md §8 的 stdio host）。
     ports: ["8080:8080"]
     depends_on:
       mysql:

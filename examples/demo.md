@@ -268,6 +268,83 @@ curl -s http://localhost:8080/actuator/health   # => {"status":"UP",...}
 > **安全姿态**：指标只承载有界 tag（decision/action 枚举）与计数/耗时，**绝不含 agent/resource/SQL/token/凭证**；
 > Prometheus 以 Bearer token 抓取（与 admin API 同源鉴权），匿名访问被 401 挡住。
 
+## 12. Nacos 深接（M18 · 服务注册发现 + namespace 多租户）
+
+把 Nacos 从「一个 policy 配置热推」升为统一控制+发现平面：custos-host 经 nacos-client `NamingService`
+注册为 Nacos 服务实例（健康 + 多 host 互相发现，撑 v0.7 集群）；每租户一个 Nacos namespace 的
+`TenantPdpRouter`，各租户独立 PDP + PolicyWatcher 热推，tenant 即 RBAC `domain`，真隔离。
+`custos.nacos.server-addr` 空时降级为单节点（`NoOpServiceRegistry` + InMemory 单租户 `default`），向后兼容。
+
+### 12.1 服务注册可见（`/cluster/peers`，admin-gated）
+
+`docker compose up` 后 custos-host 经 `WebServerInitializedEvent` 把自己注册进 Nacos naming
+（`service-name=custos-host`，metadata 仅非敏感项 version/mcp）。两种方式观察：
+
+```bash
+# A) 经 custos 的 admin-gated 端点看活跃 host 列表（与 console / Prometheus 共用 CUSTOS_ADMIN_TOKEN）
+curl -s -H "Authorization: Bearer demo-token" http://localhost:8080/cluster/peers
+#   => [{"serviceName":"custos-host","ip":"...","port":8080,"metadata":{"version":"0.6","mcp":"stdio"}}]
+
+# 无 token → 401（/cluster 经 AdminTokenFilter 门控，不对匿名暴露）
+curl -s -o /dev/null -w "%{http_code}\n" http://localhost:8080/cluster/peers   # => 401
+
+# B) 经 Nacos naming API 直接看 custos-host 服务实例（Nacos 3.x API 鉴权，先换 accessToken）
+TK=$(curl -s -XPOST 'http://localhost:8848/nacos/v3/auth/user/login' \
+  -d 'username=nacos&password=DemoPass123' | python3 -c "import sys,json;print(json.load(sys.stdin)['accessToken'])")
+curl -s "http://localhost:8848/nacos/v3/admin/ns/instance/list?serviceName=custos-host&accessToken=$TK"
+#   或浏览器开 http://localhost:8081 控制台 → 服务管理 → 服务列表，见 custos-host
+```
+
+**通过标准**：`/cluster/peers` 带 admin token 返回含 self 的活跃 host 列表（JSON 数组），无 token → 401；
+Nacos 服务列表 / naming API 可见 `custos-host`。多 host 发现：另起一个共享同 MySQL + 同 Nacos 的
+custos host（见 §8 的 stdio host，或 compose 加第二实例），两者都注册进同一 `custos-host` 服务，
+`peers()` 返回多条。
+
+### 12.2 namespace 多租户隔离（tenant 路由 + denyAll 安全闸）
+
+默认配置即单租户 `default`（`custos.tenants` 留空 → 用 `custos.nacos.namespace`，dom=`default`，
+与 §2 的策略完全兼容）。配多租户时在 host 配置声明（compose 注释示例见 `docker-compose.yml`）：
+
+```yaml
+custos:
+  tenants:                    # 空→单租户 default 用 nacos.namespace（向后兼容）
+    - name: default
+      namespace: public       # 默认租户名必须是 default（匹配 query_db 默认 tenant + dom）
+    - name: tenant-a
+      namespace: ns-tenant-a  # 额外租户：策略物理隔离在独立 Nacos namespace
+```
+
+> **真 namespace 隔离的前提**：`ns-tenant-a` 等额外 namespace 须由运维**在 Nacos 预先建好**
+> （host 只连不自动建）；各租户的策略各自写到对应 namespace 的 `custos-policy` dataId，
+> 由该租户独立的 `PolicyWatcher` 热推到独立 `CasbinPdp`，改一个租户策略不影响另一个。
+
+query_db 带可选 `tenant` 入参路由到对应租户 PDP（REST body 字段 `tenant`、MCP 工具入参 `tenant`，
+默认 `default`）：
+
+```bash
+# 缺省 tenant（= default）→ 命中 §2 写入 default 租户的策略 → 放行
+curl -s -XPOST localhost:8080/query_db -H 'Content-Type: application/json' \
+  -d "{\"tool\":\"db/query_orders\",\"resource\":\"appdb\",\"role\":\"read-only\",\"sql\":\"SELECT COUNT(*) AS n FROM appdb.orders\",\"userToken\":\"$JWT\"}"
+# 期望 {"allowed":true,...}（tenant 缺省 = default）
+
+# 带未配置的 tenant（如 ghost）→ 路由到 denyAll（未配置租户一律拒，防隔离逃逸）→ 拒
+curl -s -XPOST localhost:8080/query_db -H 'Content-Type: application/json' \
+  -d "{\"tool\":\"db/query_orders\",\"resource\":\"appdb\",\"role\":\"read-only\",\"sql\":\"SELECT COUNT(*) AS n FROM appdb.orders\",\"userToken\":\"$JWT\",\"tenant\":\"ghost\"}"
+# 期望 {"allowed":false,...}（GHOST 未配置 → denyAll；绝不 fallback 到 default 策略）
+
+# 带已配置的 tenant-a（须先在 Nacos ns-tenant-a 写好该租户策略）→ 按 tenant-a 自己的 namespace 策略决策
+# curl ... -d "{...,\"tenant\":\"tenant-a\"}"   # 与 default 互不串：改 default 策略不影响 tenant-a
+```
+
+**通过标准**（对齐 spec §8）：
+- tenant 缺省（`default`）按 §2 写入 default 的策略放行；带**未配置** tenant（`ghost`）→ DENIED（denyAll 安全闸，**绝不**逃逸到 default 策略）。
+- 配两租户（default + tenant-a，各自 namespace），同一 agent 带 `tenant=default` 与 `tenant=tenant-a` 按各自 namespace 策略分别决策，互不串（改一个租户策略不影响另一个）。
+- server-addr 空时单节点正常（NoOp registry + InMemory 单租户 default），现有 AC1–AC10 全过。
+
+（逻辑由 authz `TenantPdpRouterTest`（两租户隔离 + denyAll fallback）、`NoOpServiceRegistryTest`、
+app `MultiTenantPolicyIT`（`/cluster/peers` 401 vs 200 + tenant=default 放行 vs tenant=ghost 拒）覆盖；
+真 Nacos 注册/发现由环境门控的 `NacosServiceRegistryIT` 验证。）
+
 ## 附：验证真实 Nacos 秒级推送（计划 4 的环境门控 IT）
 
 stack 起来后，本地对着 compose 暴露的 Nacos 跑：
